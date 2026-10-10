@@ -29,7 +29,12 @@ Load the extension in Chrome: open `chrome://extensions/`, enable "Developer mod
 
 ```
 manifest.config.ts       extension manifest
+src/flags.ts             build-time feature flags
 src/popup/               popup UI
+src/background/          service worker: webRequest, refetches, chrome.debugger capture
+src/content/             content scripts: fetch/XHR patch (MAIN world), relay to the background
+src/collect/             Observation type, observe(): features + inference per observation
+src/model/               classify(), stub
 src/features/            TS side of feature extraction: extract(), presets, TS features
 features/                Rust feature extraction
   src/lib.rs             maps feature names to values (features()); wasm API: extract(), inline_scripts(), inspect()
@@ -42,6 +47,27 @@ features/                Rust feature extraction
   tests/                 reference.py (original Python code) and compare.test.ts (Rust vs Python, via the wasm)
   pkg/                   wasm-bindgen output, generated
 ```
+
+## Capturing requests
+
+MV3 webRequest doesn't expose response bodies, so they are collected in several ways. Each one produces an
+`Observation` (`src/collect`), and each observation is classified as soon as it arrives:
+
+| Source       | Where                          | Covers                                       | Body                                                    |
+|--------------|--------------------------------|----------------------------------------------|---------------------------------------------------------|
+| `webRequest` | `src/background/index.ts`      | every request from a tab                     | none, for types whose features don't read it            |
+| `refetch`    | `src/background/index.ts`      | GET `script`, `sub_frame`, `main_frame`      | downloaded again; cache, cookies and Referer can differ |
+| `patch`      | `src/content/patch.ts`         | the page's own `fetch`/XHR                   | the exact response the page got                         |
+| `dom`        | `src/content/relay.ts`         | every frame, on `load`                       | `outerHTML`: the document after parsing and scripts      |
+| `debugger`   | `src/background/debugger.ts`   | every request, behind `flags.debugger`       | the exact response, through the DevTools Protocol       |
+
+External scripts (`<script src>`) are therefore captured by `refetch`, or by `debugger` when enabled. The fetch/XHR
+patch doesn't see them. `patch.ts` runs in the page's JS world at `document_start` and must not import or export
+anything at runtime: CRXJS then injects it as is, before the page's scripts. It posts its captures to `relay.ts`,
+which forwards them to the background. The page can post the same messages, so `patch` data is untrusted.
+
+`flags.debugger` is off by default. When on, it adds the `debugger` permission, and Chrome shows a "started
+debugging this browser" banner on every tab.
 
 ## Features
 

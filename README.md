@@ -30,8 +30,6 @@ Load the extension in Chrome: open `chrome://extensions/`, enable "Developer mod
 ```
 manifest.config.ts       extension manifest
 src/popup/               popup UI
-src/sidepanel/           side panel UI
-src/content/             content scripts
 src/features/            TS side of feature extraction: extract(), presets, TS features
 features/                Rust feature extraction
   src/lib.rs             maps feature names to values (features()); wasm API: extract(), inline_scripts(), inspect()

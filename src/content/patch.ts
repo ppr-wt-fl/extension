@@ -7,12 +7,7 @@ import type { RelayMessage } from "./relay";
 const TAG = "__blocker_patch__";
 const MAX_BODY_LENGTH = 5_000_000;
 
-type Capture = {
-  source: "captured_by_patch";
-  url: string;
-  method: string;
-  body?: string;
-};
+type Capture = Extract<RelayMessage, { source: "captured_by_patch" }>;
 
 function post(capture: Capture) {
   window.postMessage({ [TAG]: capture }, "*");

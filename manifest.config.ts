@@ -20,7 +20,7 @@ export default defineManifest({
     service_worker: 'src/background/index.ts',
     type: 'module',
   },
-  permissions: ['webRequest', ...(flags.debugger ? ['debugger' as const] : [])],
+  permissions: ['webRequest', 'offscreen', ...(flags.debugger ? ['debugger' as const] : [])],
   host_permissions: ['<all_urls>'],
   content_scripts: [
     {

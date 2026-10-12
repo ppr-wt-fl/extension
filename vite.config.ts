@@ -17,6 +17,12 @@ export default defineConfig({
     crx({ manifest }),
     zip({ outDir: 'release', outFileName: `crx-${pkg.name}-${pkg.version}.zip` }),
   ],
+  build: {
+    rollupOptions: {
+      // not in the manifest, the service worker opens it with chrome.offscreen
+      input: { offscreen: 'src/offscreen/index.html' },
+    },
+  },
   server: {
     cors: {
       origin: [

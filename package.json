@@ -12,6 +12,8 @@
     "build:features": "cargo build --release --target wasm32-unknown-unknown --manifest-path features/Cargo.toml && wasm-bindgen --target web --out-dir features/pkg features/target/wasm32-unknown-unknown/release/adflush_features.wasm"
   },
   "dependencies": {
+    "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs-backend-wasm": "^4.22.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },

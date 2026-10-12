@@ -33,8 +33,11 @@ src/flags.ts             build-time feature flags
 src/popup/               popup UI
 src/background/          service worker: webRequest, refetches, chrome.debugger capture
 src/content/             content scripts: fetch/XHR patch (MAIN world), relay to the background
-src/collect/             Observation type, observe(): features + inference per observation
-src/model/               classify(), stub
+src/collect/             Observation type, observe(): features, then classification in src/offscreen
+src/model/               any tfjs Layers model: loading, predict(), gradient(), inspectModes()
+src/offscreen/           offscreen document + worker: learner and verdicts, outlive the service worker
+src/learn/               batches requests, classifies and trains on each batch, FedAvg rounds (flags.learn)
+src/label/               label(): training labels, black box (stub)
 src/features/            TS side of feature extraction: extract(), presets, TS features
 features/                Rust feature extraction
   src/lib.rs             maps feature names to values (features()); wasm API: extract(), inline_scripts(), inspect()
@@ -51,7 +54,8 @@ features/                Rust feature extraction
 ## Capturing requests
 
 MV3 webRequest doesn't expose response bodies, so they are collected in several ways. Each one produces an
-`Observation` (`src/collect`), and each observation is classified as soon as it arrives:
+`Observation` (`src/collect`). Its features go to the learner in the offscreen document's worker (`src/offscreen`),
+which classifies it with the next batch and trains on it if it has a label:
 
 | Source       | Where                          | Covers                                       | Body                                                    |
 |--------------|--------------------------------|----------------------------------------------|---------------------------------------------------------|
@@ -157,3 +161,9 @@ scripts and pages can be compared by writing its fixture elsewhere and running w
 - Domains use the suffix list bundled with tldextract 5.1.2; YOPO's WebGraph environment doesn't pin tldextract.
 - Inline scripts are found with a regex that follows Python 3.8's html.parser (`</script>` ends a script,
   comments are skipped), not with BeautifulSoup itself.
+
+## TODO
+
+- Seed randomness for tests and offline experiments: make `Reservoir`'s random source injectable (`src/learn`,
+  `Math.random` by default) and seed tfjs Dropout. Keep it unseeded in the extension, where a known seed lets a page
+  predict which of its samples are replayed.

@@ -7,6 +7,9 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "types": ["node"],
+    "paths": {
+      "@/*": ["./src/*"]
+    },
     "allowImportingTsExtensions": true,
     "strict": true,
     "noFallthroughCasesInSwitch": true,

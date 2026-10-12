@@ -11,4 +11,40 @@ export const flags = {
    * - "any": block if any observation's verdict is block
    */
   reconcile: "canonical" as "canonical" | "any",
+  /** On-device training of the local model (src/learn), FedAvg-style rounds. */
+  learn: {
+    /**
+     * Which weights classify:
+     * - "local": the model being trained, so the batch's single forward pass both classifies and trains
+     * - "global": the round's starting weights, which costs a second forward pass once the local model has moved
+     */
+    inferWith: "local" as "local" | "global",
+    /**
+     * How a model whose layers act differently in training (Dropout, BatchNorm) is trained, see `inspectModes`:
+     * - "inference": as it classifies, so the training pass also gives the verdicts
+     * - "training": like model.fit, the verdicts then need a second, inference-mode pass
+     */
+    trainMode: "inference" as "inference" | "training",
+    /** Sources a page can't forge. Not captured_by_patch: the page can post patch messages itself. */
+    sources: ["webRequest", "refetch", "dom", "debugger"] as readonly string[],
+    /** A batch is classified and trained on when it has this many requests, */
+    batchSize: 500,
+    /** or no request arrived for this long. */
+    idleMs: 100,
+    learningRate: 0.01,
+    /** Share of each batch's training rows that are replayed from earlier batches, against drifting to one site. */
+    replayFraction: 0.15,
+    /** Samples kept for replay, by reservoir sampling over every trained sample. */
+    replayCapacity: 5000,
+    /** Training samples per top-level site and round, so one page can't fill a round with its requests. */
+    perSiteLimit: 100,
+    /** L2 norm each site's summed gradient in a batch is clipped to, so one page can only move a step so far. */
+    siteClip: 1,
+    /** Rows per forward/backward pass. Events run between chunks, so smaller chunks keep the worker responsive. */
+    chunkSize: 50,
+    /** L2 norm the round's update (local - global) is clipped to before it is sent. */
+    updateClip: 10,
+    /** SGD steps (batches with training rows) per round. */
+    roundSteps: 50,
+  },
 };

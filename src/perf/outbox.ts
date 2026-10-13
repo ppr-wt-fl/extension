@@ -1,0 +1,99 @@
+import { decode, encode, type OutboxRecord, type Sample } from ".";
+
+// Raw samples in IndexedDB until exported (popup). Shared by every extension-origin context, so each writes its own
+// flushes without messages. Separate from ./index: tests don't have IndexedDB.
+// TODO upload: chrome.alarms in the SW -> read like exportOutbox, POST gzipped NDJSON (CompressionStream),
+// deleteUpTo on 2xx.
+
+const STORE = "outbox";
+let db: Promise<IDBDatabase> | undefined;
+
+function open(): Promise<IDBDatabase> {
+  db ??= new Promise((resolve, reject) => {
+    const request = indexedDB.open("perf", 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(STORE, {
+        // generates each record's key itself
+        autoIncrement: true,
+      });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  return db;
+}
+
+function done(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = tx.onabort = () => reject(tx.error);
+  });
+}
+
+/** Sink writing each flush as one record. `ctx`: where the samples were taken, e.g. "sw". */
+export function outboxSink(ctx: string): (samples: Sample[]) => void {
+  const instance = crypto.randomUUID().slice(0, 8);
+  return (samples) => {
+    void (async () => {
+      const tx = (await open()).transaction(STORE, "readwrite");
+      tx.objectStore(STORE).add(encode(samples, ctx, instance));
+      await done(tx);
+    })().catch(console.error);
+  };
+}
+
+/** NDJSON of every sample, and the last key in it for `deleteUpTo`. */
+export async function exportOutbox(): Promise<{
+  blob: Blob;
+  lastKey?: IDBValidKey;
+}> {
+  const tx = (await open()).transaction(STORE);
+  const lines: string[] = [];
+  let lastKey: IDBValidKey | undefined;
+  await new Promise<void>((resolve, reject) => {
+    const request = tx.objectStore(STORE).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return resolve();
+      for (const row of decode(cursor.value as OutboxRecord))
+        lines.push(JSON.stringify(row));
+      lastKey = cursor.key;
+      cursor.continue();
+    };
+    request.onerror = () => reject(request.error);
+  });
+  return {
+    blob: new Blob(
+      lines.map((l) => l + "\n"),
+      { type: "application/x-ndjson" },
+    ),
+    lastKey,
+  };
+}
+
+/** Deletes up to and including `key`: what was exported, not what was written since. */
+export async function deleteUpTo(key: IDBValidKey): Promise<void> {
+  const tx = (await open()).transaction(STORE, "readwrite");
+  tx.objectStore(STORE).delete(IDBKeyRange.upperBound(key));
+  await done(tx);
+}
+
+export async function clearOutbox(): Promise<void> {
+  const tx = (await open()).transaction(STORE, "readwrite");
+  tx.objectStore(STORE).clear();
+  await done(tx);
+}
+
+/** Records in the outbox, and the origin's storage use in bytes. */
+export async function outboxStats(): Promise<{
+  records: number;
+  bytes?: number;
+}> {
+  const tx = (await open()).transaction(STORE);
+  const request = tx.objectStore(STORE).count();
+  await done(tx);
+  return {
+    records: request.result,
+    bytes: (await navigator.storage.estimate()).usage,
+  };
+}

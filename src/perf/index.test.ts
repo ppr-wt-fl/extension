@@ -1,26 +1,50 @@
-import { expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import { flags } from '@/flags'
-import { Metrics } from '.'
+import { decode, encode, record, setSink, type Sample } from '.'
 
-test('summarizes samples by name', () => {
-  const metrics = new Metrics()
-  metrics.add(Array.from({ length: 100 }, (_, i) => ['a', i + 1] as [string, number]))
-  metrics.add([['b', 1], ['b', NaN]])
-  const { a, b } = metrics.summary()
-  expect(a).toMatchObject({ count: 100, sum: 5050, min: 1, max: 100, last: 100, mean: 50.5, p50: 51, p95: 96, p99: 100 })
-  // non-finite samples are dropped
-  expect(b.count).toBe(1)
-  metrics.reset()
-  expect(metrics.summary()).toEqual({})
+afterEach(() => vi.useRealTimers())
+
+test('encode interns names, decode restores the samples', () => {
+  const samples: Sample[] = [
+    ['a', 1, 1000],
+    ['b', 2.5, 1000.25],
+    ['a', NaN, 1003],
+  ]
+  const encoded = encode(samples, 'sw', 'abc')
+  expect(encoded.names).toEqual(['a', 'b'])
+  expect([...encoded.ids]).toEqual([0, 1, 0])
+  const rows = [...decode(encoded)]
+  expect(rows.map((r) => [r.name, r.value, r.ctx, r.instance])).toEqual([
+    ['a', 1, 'sw', 'abc'],
+    ['b', 2.5, 'sw', 'abc'],
+    ['a', NaN, 'sw', 'abc'],
+  ])
+  rows.forEach((r, i) => expect(r.t).toBeCloseTo(samples[i][2], 3))
 })
 
-test('percentiles cover the last window of samples, the totals all of them', () => {
-  const metrics = new Metrics()
-  const n = flags.perf.window
-  metrics.add(Array.from({ length: n }, () => ['a', 1000] as [string, number]))
-  metrics.add(Array.from({ length: n }, () => ['a', 1] as [string, number]))
-  const { a } = metrics.summary()
-  expect(a.count).toBe(2 * n)
-  expect(a.max).toBe(1000)
-  expect(a.p99).toBe(1)
+test('a sink gets the buffered samples after its delay', () => {
+  vi.useFakeTimers()
+  const got: Sample[] = []
+  record('x', 1)
+  setSink((s) => got.push(...s), 100)
+  record('y', 2)
+  expect(got).toEqual([])
+  vi.advanceTimersByTime(100)
+  expect(got.map(([name, value]) => [name, value])).toEqual([
+    ['x', 1],
+    ['y', 2],
+  ])
+})
+
+test('without a sink, the buffer keeps the newest maxBuffer samples', async () => {
+  vi.resetModules()
+  const perf = await import('.')
+  vi.useFakeTimers()
+  const n = flags.perf.maxBuffer
+  for (let i = 0; i < n + 5; i++) perf.record('a', i)
+  const got: Sample[] = []
+  perf.setSink((s) => got.push(...s))
+  vi.runAllTimers()
+  expect(got).toHaveLength(n)
+  expect(got[0][1]).toBe(5)
 })

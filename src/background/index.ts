@@ -1,11 +1,12 @@
 import { BODY_TYPES, observe, topLevelUrl, type Observation } from "../collect";
 import type { RelayMessage } from "../content/relay";
 import { flags } from "../flags";
-import { count, now, record, since } from "../perf";
-import { bumpSessionCounter } from "../perf/session";
+import { count, now, record, setSink, since } from "../perf";
+import { outboxSink } from "../perf/outbox";
 import { captureWithDebugger } from "./debugger";
 
-void bumpSessionCounter("sw.starts");
+setSink(outboxSink("sw"), flags.perf.flushMs);
+count("sw.starts");
 
 chrome.webRequest.onCompleted.addListener(
   async (details) => {

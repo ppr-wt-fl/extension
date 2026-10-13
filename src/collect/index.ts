@@ -14,15 +14,7 @@ import {
   type RequestInfo,
 } from "../features";
 import { flags } from "@/flags";
-import { bumpSessionCounter } from "@/perf/session";
-import {
-  count,
-  now,
-  record,
-  setSink,
-  since,
-  type PerfReport,
-} from "@/perf";
+import { count, now, record, since } from "@/perf";
 
 /**
  * How a request was observed:
@@ -85,21 +77,10 @@ async function ensureOffscreenDocument(): Promise<void> {
     if ("error" in reply) throw new Error(reply.error);
     // model load: startup.* in worker
     since("sw.offscreenCreate", start);
-    void bumpSessionCounter("offscreen.creations");
+    count("offscreen.creations");
   })().finally(() => (creatingOffscreen = undefined));
   await creatingOffscreen;
 }
-
-// Metrics -> worker. Not measured itself, else each flush schedules the next.
-setSink(async (samples) => {
-  try {
-    await ensureOffscreenDocument();
-    const report: PerfReport = { target: "offscreen", perf: samples };
-    await chrome.runtime.sendMessage(report);
-  } catch (error) {
-    console.error(error);
-  }
-}, flags.perf.flushMs);
 
 /** Classifies an observation with the next batch, which also trains on it if it has a label (src/learn).
  * Computes features on callers thread

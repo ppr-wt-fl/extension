@@ -6,16 +6,8 @@ import type { Source } from "@/collect";
 import { flags } from "@/flags";
 import { Learner } from "@/learn";
 import { inputSize, loadModel, THRESHOLD } from "@/model";
-import {
-  count,
-  Metrics,
-  now,
-  setSink,
-  since,
-  type PerfReport,
-  type Snapshot,
-  type SnapshotRequest,
-} from "@/perf";
+import { count, now, record, setSink, since } from "@/perf";
+import { outboxSink } from "@/perf/outbox";
 // FIXME: copy the model into this repo instead of importing it from the robustness-evaluation run
 import modelJson from "../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/model.json";
 import featureOrder from "../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/feature_order.json";
@@ -47,8 +39,7 @@ export interface RestoreRequest {
   restore: { key: string; id: number }[];
 }
 
-export type OffscreenRequest =
-  LearnerRequest | RestoreRequest | PerfReport | SnapshotRequest;
+export type OffscreenRequest = LearnerRequest | RestoreRequest;
 
 /** A block rule the service worker adds or removes. */
 export interface RuleChange {
@@ -61,8 +52,6 @@ export interface RuleChange {
 export type LearnerReply =
   | { rule?: RuleChange; repliedAt?: number }
   | { error: string };
-
-export type OffscreenReply = LearnerReply | Snapshot;
 
 /**
  * How close each source's body is to what the page got, higher is closer. The debugger and the patch see the page's
@@ -110,31 +99,22 @@ function decide(bySource: Map<Source, boolean>): boolean {
   return bySource.get(best)!;
 }
 
-/** All contexts' metrics. Lost with offscreen doc. */
-const metrics = new Metrics();
-setSink((samples) => metrics.add(samples));
+setSink(outboxSink("worker"), flags.perf.flushMs);
 
 let learner: Learner | undefined;
 
-function snapshot(): Snapshot {
-  const tf = memory();
-  return {
-    since: metrics.since,
-    metrics: metrics.summary(),
-    gauges: {
-      verdicts: verdicts.size,
-      rules: rules.size,
-      // growing = leak
-      "tf.numTensors": tf.numTensors,
-      "tf.numBytes": tf.numBytes,
-      ...Object.fromEntries(
-        Object.entries(learner?.sizes() ?? {}).map(([k, v]) => [
-          `learner.${k}`,
-          v,
-        ]),
-      ),
-    },
-  };
+// Gauges: current sizes, as samples every flush
+if (flags.perf.enabled) {
+  setInterval(() => {
+    const tf = memory();
+    record("verdicts", verdicts.size);
+    record("rules", rules.size);
+    // growing = leak
+    record("tf.numTensors", tf.numTensors);
+    record("tf.numBytes", tf.numBytes);
+    for (const [k, v] of Object.entries(learner?.sizes() ?? {}))
+      record(`learner.${k}`, v);
+  }, flags.perf.flushMs);
 }
 
 const learnerPromise = (async () => {
@@ -179,16 +159,6 @@ self.onmessage = async ({
   data: { id, message, relayedAt },
 }: MessageEvent<{ id: number; message: OffscreenRequest; relayedAt: number }>) => {
   const receivedAt = now();
-  if ("perf" in message) {
-    metrics.add(message.perf);
-    self.postMessage({ id, reply: {} satisfies LearnerReply });
-    return;
-  }
-  if ("snapshot" in message) {
-    self.postMessage({ id, reply: snapshot() });
-    if (message.reset) metrics.reset();
-    return;
-  }
   if ("restore" in message) {
     for (const rule of message.restore) {
       rules.set(rule.key, rule.id);

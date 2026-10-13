@@ -1,6 +1,6 @@
 import { flags } from "@/flags";
 
-// Perf metrics. Every context buffers samples -> sink; worker aggregates them in `Metrics`.
+// Perf metrics. Every context buffers samples -> sink, which writes them raw to IndexedDB (./outbox); analysed offline.
 // Prefix = where taken: sw, hop, worker/learner, block/rules/decision/sources, page, startup, fl.
 // Durations ms, sizes bytes. Counter = samples of 1.
 
@@ -9,7 +9,8 @@ export function now(): number {
   return performance.timeOrigin + performance.now();
 }
 
-export type Sample = [name: string, value: number];
+/** `at`: `now()` when recorded */
+export type Sample = [name: string, value: number, at: number];
 
 let buffer: Sample[] = [];
 let sink: ((samples: Sample[]) => void) | undefined;
@@ -17,7 +18,7 @@ let delayMs = 0;
 let scheduled = false;
 
 // FIXME: not a huge fan of this sink setup
-/** Where samples go, after `delay` ms. Unset: buffered (tests). */
+/** Where samples go, after `delay` ms. Unset: buffered (tests), up to flags.perf.maxBuffer. */
 export function setSink(fn: (samples: Sample[]) => void, delay = 0) {
   sink = fn;
   delayMs = delay;
@@ -26,8 +27,8 @@ export function setSink(fn: (samples: Sample[]) => void, delay = 0) {
 
 export function record(name: string, value: number) {
   if (!flags.perf.enabled) return;
-  if (buffer.length >= flags.perf.window) buffer.shift();
-  buffer.push([name, value]);
+  if (buffer.length >= flags.perf.maxBuffer) buffer.shift();
+  buffer.push([name, value, now()]);
   schedule();
 }
 
@@ -59,106 +60,44 @@ function schedule() {
   }, delayMs);
 }
 
-/** Percentiles over last `flags.perf.window` samples. */
-export interface Summary {
-  count: number;
-  sum: number;
-  min: number;
-  max: number;
-  last: number;
-  mean: number;
-  p50: number;
-  p95: number;
-  p99: number;
+/** One flush of one context in the outbox. Names interned per record: `ids` index `names`. */
+export interface OutboxRecord {
+  ctx: string;
+  /** Random per context start */
+  instance: string;
+  /** Epoch ms of the first sample */
+  t0: number;
+  names: string[];
+  ids: Uint16Array;
+  values: Float64Array;
+  /** ms since t0 */
+  dt: Float32Array;
 }
 
-class Stat {
-  count = 0;
-  sum = 0;
-  min = Infinity;
-  max = -Infinity;
-  last = NaN;
-  private readonly window: Float64Array;
-  private next = 0;
-
-  constructor(size: number) {
-    this.window = new Float64Array(size);
-  }
-
-  add(value: number) {
-    this.count++;
-    this.sum += value;
-    this.min = Math.min(this.min, value);
-    this.max = Math.max(this.max, value);
-    this.last = value;
-    this.window[this.next++ % this.window.length] = value;
-  }
-
-  summary(): Summary {
-    const sorted = this.window
-      .slice(0, Math.min(this.count, this.window.length))
-      .sort();
-    const at = (q: number) =>
-      sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
-    return {
-      count: this.count,
-      sum: this.sum,
-      min: this.min,
-      max: this.max,
-      last: this.last,
-      mean: this.sum / this.count,
-      p50: at(0.5),
-      p95: at(0.95),
-      p99: at(0.99),
-    };
-  }
+export function encode(
+  samples: Sample[],
+  ctx: string,
+  instance: string,
+): OutboxRecord {
+  const t0 = samples[0]?.[2] ?? now();
+  const index = new Map<string, number>();
+  const ids = new Uint16Array(samples.length);
+  const values = new Float64Array(samples.length);
+  const dt = new Float32Array(samples.length);
+  samples.forEach(([name, value, at], i) => {
+    let id = index.get(name);
+    if (id === undefined) index.set(name, (id = index.size));
+    ids[i] = id;
+    values[i] = value;
+    dt[i] = at - t0;
+  });
+  return { ctx, instance, t0, names: [...index.keys()], ids, values, dt };
 }
 
-/** Aggregates samples by name. */
-export class Metrics {
-  private stats = new Map<string, Stat>();
-  since = Date.now();
-
-  add(samples: Sample[]) {
-    for (const [name, value] of samples) {
-      if (!Number.isFinite(value)) continue;
-      let stat = this.stats.get(name);
-      if (!stat) this.stats.set(name, (stat = new Stat(flags.perf.window)));
-      stat.add(value);
-    }
+/** One row per sample, for export. */
+export function* decode(record: OutboxRecord) {
+  const { ctx, instance, t0, names, ids, values, dt } = record;
+  for (let i = 0; i < ids.length; i++) {
+    yield { t: t0 + dt[i], ctx, instance, name: names[ids[i]], value: values[i] };
   }
-
-  summary(): Record<string, Summary> {
-    return Object.fromEntries(
-      [...this.stats]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([name, stat]) => [name, stat.summary()]),
-    );
-  }
-
-  reset() {
-    this.stats.clear();
-    this.since = Date.now();
-  }
-}
-
-/** Samples sent to the worker. */
-export interface PerfReport {
-  target: "offscreen";
-  perf: Sample[];
-}
-
-/** Asks worker for metrics, optionally resets. */
-export interface SnapshotRequest {
-  target: "offscreen";
-  snapshot: true;
-  reset?: boolean;
-}
-
-export interface Snapshot {
-  /** Epoch ms of worker start or last reset */
-  since: number;
-  metrics: Record<string, Summary>;
-  /** Current sizes */
-  gauges: Record<string, number>;
 }

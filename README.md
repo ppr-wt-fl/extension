@@ -167,20 +167,23 @@ scripts and pages can be compared by writing its fixture elsewhere and running w
 
 ## Performance
 
-Behind `flags.perf` (`src/flags.ts`). Every context records samples with `record`/`since`/`count` (`src/perf`); the
-service worker sends them to the offscreen worker every `flushMs`, which aggregates them (count, sum, min, max,
-p50/p95/p99 over the last `window` samples). The popup shows them, `bench/` reads them. Lost with the offscreen
-document, except `sw.starts` and `offscreen.creations` (chrome.storage.session).
+Behind `flags.perf` (`src/flags.ts`). Every context records samples with `record`/`since`/`count` (`src/perf`) and
+every `flushMs` writes them raw, with timestamps, to IndexedDB (`perf`/`outbox`, `src/perf/outbox.ts`): one record
+per flush, names interned per record. The service worker and the offscreen worker write their own, content scripts
+message the service worker. The popup exports the outbox as NDJSON (`{t, ctx, instance, name, value}` per line) and
+clears it; aggregation (percentiles etc.) happens offline. Upload to a server is a TODO in `src/perf/outbox.ts`.
 
 - Latency: `sw.timeToRule` (request completed until its block rule is active, the request's repeats load until
   then), `sw.timeToVerdict`, and its stages: `sw.eventDelay`, `sw.topLevelUrl`, `sw.refetch`, `sw.ready`,
   `sw.features.<type>`, `hop.*` (SW → offscreen → worker → SW), `learner.queueWait`, `learner.train`/`infer`/`batch`,
   `worker.handle`, `sw.ruleFlush`
 - Blocking: `block.hits` (rules that blocked, needs declarativeNetRequestFeedback, unpacked only), `rules.added` (each
-  one's request loaded first), `block.loadedDespiteRule`, `decision.flips`, `sources.disagree`; gauge `rules` and,
-  in the popup, `rules.installed` against `rules.cap`
-- Memory: gauges `tf.numTensors`/`tf.numBytes` (leaks), `verdicts`, `learner.*`
-- Startup: `startup.*` in the worker, `sw.offscreenCreate`
+  one's request loaded first), `block.loadedDespiteRule`, `decision.flips`, `sources.disagree`, `sw.requestsCompleted`
+  (`block.hits / (block.hits + sw.requestsCompleted)` = share blocked); gauge `rules` and, in the popup,
+  `rules.installed` against `rules.cap`
+- Memory: gauges `tf.numTensors`/`tf.numBytes` (leaks), `verdicts`, `learner.*`, sampled by the worker every
+  `flushMs`
+- Startup: `startup.*` in the worker, `sw.offscreenCreate`, counters `sw.starts`, `offscreen.creations`
 - Page: `page.patchMs`, `page.relayMs`, `page.outerHtmlMs` (content scripts' main-thread time), `sw.refetchBytes`
 - Training (`flags.perf.fl`, off): `fl.loss`, `fl.siteGradNorm`/`siteClipped`, `fl.updateNorm`/`updateClipped`,
   `fl.rejected*`, `fl.roundMs`, `fl.roundRows`, `fl.updateBytes`, `fl.disagreement` (local vs global verdicts, a

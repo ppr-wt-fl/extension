@@ -14,6 +14,15 @@ import {
   type RequestInfo,
 } from "../features";
 import { flags } from "@/flags";
+import { bumpSessionCounter } from "@/perf/session";
+import {
+  count,
+  now,
+  record,
+  setSink,
+  since,
+  type PerfReport,
+} from "@/perf";
 
 /**
  * How a request was observed:
@@ -61,6 +70,7 @@ async function ensureOffscreenDocument(): Promise<void> {
   if (contexts.length > 0 && !creatingOffscreen) return;
 
   creatingOffscreen ??= (async () => {
+    const start = now();
     await chrome.offscreen.createDocument({
       url: "src/offscreen/index.html",
       reasons: [chrome.offscreen.Reason.WORKERS],
@@ -73,24 +83,46 @@ async function ensureOffscreenDocument(): Promise<void> {
     };
     const reply: LearnerReply = await chrome.runtime.sendMessage(restore);
     if ("error" in reply) throw new Error(reply.error);
+    // model load: startup.* in worker
+    since("sw.offscreenCreate", start);
+    void bumpSessionCounter("offscreen.creations");
   })().finally(() => (creatingOffscreen = undefined));
   await creatingOffscreen;
 }
+
+// Metrics -> worker. Not measured itself, else each flush schedules the next.
+setSink(async (samples) => {
+  try {
+    await ensureOffscreenDocument();
+    const report: PerfReport = { target: "offscreen", perf: samples };
+    await chrome.runtime.sendMessage(report);
+  } catch (error) {
+    console.error(error);
+  }
+}, flags.perf.flushMs);
 
 /** Classifies an observation with the next batch, which also trains on it if it has a label (src/learn).
  * Computes features on callers thread
  * */
 export async function observe(obs: Observation): Promise<void> {
+  count(`sw.observations.${obs.source}`);
   if (obs.req.type === "xmlhttprequest") {
     // TODO: the features ignore xhr bodies, even for JS the page evals. Classify them as "script", or only keep them as data?
   }
   if (BODY_TYPES.has(obs.req.type) && obs.req.body === undefined) {
     // TODO: no body (non-GET, failed refetch, binary response). Infer with zeroed JS features, skip, or use a URL-only model?
+    count(`sw.bodyMissing.${obs.req.type}`);
   }
 
+  let start = now();
   await Promise.all([rust, ensureOffscreenDocument()]);
+  since("sw.ready", start);
 
+  start = now();
   const features = extractFeatures(FEATURES, obs.req);
+  since(`sw.features.${obs.req.type}`, start);
+  if (obs.req.body !== undefined)
+    record(`sw.featuresBodyChars.${obs.req.type}`, obs.req.body.length);
 
   // TODO: skip classifying a body identical to one already classified for this request (hash it)
   const request: LearnerRequest = {
@@ -101,13 +133,16 @@ export async function observe(obs: Observation): Promise<void> {
     features: [...features],
     site: new URL(obs.req.topLevelUrl).hostname,
     label: await trainingLabel(obs),
+    sentAt: now(),
   };
   const reply: LearnerReply = await chrome.runtime.sendMessage(request);
   if ("error" in reply) throw new Error(reply.error);
+  if (reply.repliedAt !== undefined) since("hop.workerToSw", reply.repliedAt);
+  since("sw.timeToVerdict", obs.timeStamp);
   // with "canonical", a better source can also overturn a block, which removes its rule
 
   if (reply.rule) {
-    applyRule(reply.rule, obs.req);
+    applyRule(reply.rule, obs.req, obs.timeStamp);
   }
 }
 

@@ -47,4 +47,17 @@ export const flags = {
     /** SGD steps (batches with training rows) per round. */
     roundSteps: 50,
   },
+  /** Perf metrics (src/perf), shown in popup, read by bench/. */
+  perf: {
+    /** Adds storage + declarativeNetRequestFeedback (rule hits) permissions. */
+    enabled: true,
+    /** User Timing entries for traces. Never cleared, so off. */
+    trace: false,
+    /** Training metrics (fl.*). Local/global disagreement costs 2nd forward pass. Off until labels exist. */
+    fl: false,
+    /** Samples per metric for percentiles; max buffer without sink. */
+    window: 10_000,
+    /** SW buffer time before sending to worker. */
+    flushMs: 1000,
+  },
 };

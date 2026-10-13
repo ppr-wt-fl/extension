@@ -95,18 +95,20 @@ export function inspectModes(model: LayersModel): {
 
 /**
  * Gradient of the summed binary cross-entropy of the rows, one tensor per trainable weight, and the probabilities
- * of the same forward pass.
+ * of the same forward pass. `loss` only with `readLoss`.
  */
 export function gradient(
   model: LayersModel,
   rows: readonly Float64Array[],
   labels: readonly number[],
   training: boolean,
-): { grads: Tensor[]; probabilities: Float32Array } {
+  readLoss = false,
+): { grads: Tensor[]; probabilities: Float32Array; loss: number } {
   const trainableVariables = model.trainableWeights.map(
     (w) => w.read() as Variable,
   );
   let probabilities: Float32Array = new Float32Array();
+  let loss = NaN;
 
   const grads = tidy(() => {
     const { value, grads } = variableGrads(() => {
@@ -125,9 +127,10 @@ export function gradient(
       ) as Scalar;
     }, trainableVariables);
 
+    if (readLoss) loss = value.dataSync()[0];
     value.dispose();
     return trainableVariables.map((v) => grads[v.name]);
   });
 
-  return { grads, probabilities };
+  return { grads, probabilities, loss };
 }

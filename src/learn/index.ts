@@ -6,7 +6,8 @@ import {
   type Tensor,
 } from "@tensorflow/tfjs";
 import { flags } from "@/flags";
-import { gradient, inspectModes, predict } from "@/model";
+import { gradient, inspectModes, predict, THRESHOLD } from "@/model";
+import { count, now, record, since } from "@/perf";
 
 export type LearnConfig = typeof flags.learn;
 
@@ -28,11 +29,16 @@ interface Row extends Sample {
 
 interface Pending {
   sample: Sample;
+  /** `now()` at submit */
+  submittedAt: number;
   resolve(probability: number): void;
   reject(error: unknown): void;
 }
 
-/** Receives a round's clipped update, local - global, flattened in the order of the trainable weights. */
+/**
+ * Receives a round's clipped update, local - global, flattened in the order of the trainable weights.
+ * TODO(secret sharing): split into 2 additive shares (S0, S1); measure fl.shareMs, fl.uploadBytes (~2 * updateBytes).
+ */
 export type SendUpdate = (update: Float32Array) => void;
 
 /** Stub until there is an FL server. */
@@ -58,6 +64,10 @@ export class Learner {
   private steps = 0;
   private perSite = new Map<string, number>();
   private trained = new Set<string>();
+  /** Round start, `now()` */
+  private roundStart = now();
+  /** Training rows this round */
+  private roundRows = 0;
   readonly modes: { modeDependent: boolean; stateful: boolean };
 
   /** `global` and `local` are two copies of the same model, `local` is trained. */
@@ -66,6 +76,8 @@ export class Learner {
     private readonly local: LayersModel,
     private readonly config: LearnConfig = flags.learn,
     private readonly sendUpdate: SendUpdate = logUpdate,
+    /** fl.* metrics, flags.perf.fl. Some need a backend sync. */
+    private readonly measureFl = flags.perf.enabled && flags.perf.fl,
   ) {
     this.replay = new Reservoir(config.replayCapacity);
     this.modes = inspectModes(local);
@@ -81,7 +93,7 @@ export class Learner {
   submit(sample: Sample): Promise<number> {
     return new Promise((resolve, reject) => {
       // add to queue
-      this.queue.push({ sample, resolve, reject });
+      this.queue.push({ sample, resolve, reject, submittedAt: now() });
 
       // queue handling (idle time + max capacity)
       clearTimeout(this.timer);
@@ -111,7 +123,23 @@ export class Learner {
     return this.running;
   }
 
+  /** State sizes, for perf. */
+  sizes(): Record<string, number> {
+    return {
+      queue: this.queue.length,
+      replay: this.replay.items.length,
+      trained: this.trained.size,
+      perSite: this.perSite.size,
+      steps: this.steps,
+    };
+  }
+
   private async run(queued: Pending[]): Promise<void> {
+    const batchStart = now();
+    // incl. idleMs + earlier batches
+    for (const { submittedAt } of queued) since("learner.queueWait", submittedAt);
+    record("learner.batchSize", queued.length);
+
     // Get samples for training
     const fresh: Row[] = [];
     for (let index = 0; index < queued.length; index++) {
@@ -130,6 +158,7 @@ export class Learner {
         )
       : [];
     const samples = [...fresh, ...replayed];
+    if (samples.length) record("learner.trainRows", samples.length);
 
     // Determine how we're running the model
     const training = this.config.trainMode === "training";
@@ -144,6 +173,8 @@ export class Learner {
     }
 
     const probabilities = new Float32Array(queued.length).fill(NaN);
+    let start = now();
+    let loss = 0;
 
     // Split data into sites
     let total: Tensor[] | undefined;
@@ -155,12 +186,18 @@ export class Learner {
     for (const group of bySite.values()) {
       let site: Tensor[] | undefined;
       for (const chunk of chunks(group, this.config.chunkSize)) {
-        const { grads, probabilities: chunkProbabilities } = gradient(
+        const {
+          grads,
+          probabilities: chunkProbabilities,
+          loss: chunkLoss,
+        } = gradient(
           this.local,
           chunk.map((s) => s.features),
           chunk.map((s) => s.label),
           training,
+          this.measureFl,
         );
+        loss += chunkLoss;
 
         if (reuseInferencePass) {
           for (let i = 0; i < chunk.length; i++) {
@@ -175,8 +212,16 @@ export class Learner {
         await yieldToEvents();
       }
 
+      if (this.measureFl) {
+        const norm = globalNorm(site!);
+        record("fl.siteGradNorm", norm);
+        record("fl.siteClipped", Number(norm > this.config.siteClip));
+      }
       total = add(total, clip(site!, this.config.siteClip));
     }
+    if (samples.length) since("learner.train", start);
+    if (this.measureFl && samples.length)
+      record("fl.loss", loss / samples.length);
 
     // classify the requests the training pass gave no verdict for
     let classifier = this.local;
@@ -192,6 +237,7 @@ export class Learner {
 
     // Run unclassified samples
     // TODO: i'm not convinced this is a super clean way of running it, this sort of split
+    start = now();
     for (const chunk of chunks(unclassified, this.config.chunkSize)) {
       const chunkFeatures = chunk.map(
         (queueIndex) => queued[queueIndex].sample.features,
@@ -204,10 +250,13 @@ export class Learner {
       }
       await yieldToEvents();
     }
+    if (unclassified.length) since("learner.infer", start);
 
     for (let i = 0; i < queued.length; i++) {
       queued[i].resolve(probabilities[i]);
     }
+
+    if (this.measureFl && this.steps > 0) this.disagreement(queued, probabilities);
 
     // no training rows: nothing to update
     if (!total) return;
@@ -231,9 +280,35 @@ export class Learner {
     }
 
     this.steps++;
+    this.roundRows += samples.length;
+    since("learner.batch", batchStart);
     if (this.steps >= this.config.roundSteps) {
       this.endRound();
     }
+  }
+
+  /** Local vs global verdict disagreement on this batch. Costs a forward pass. */
+  private disagreement(queued: Pending[], probabilities: Float32Array): void {
+    const other =
+      this.config.inferWith === "global" ? this.local : this.global;
+    let flipped = 0;
+    let diff = 0;
+    let offset = 0;
+    for (const chunk of chunks(queued, this.config.chunkSize)) {
+      const otherProbabilities = predict(
+        other,
+        chunk.map((p) => p.sample.features),
+      );
+      for (let i = 0; i < chunk.length; i++) {
+        const p = probabilities[offset + i];
+        const q = otherProbabilities[i];
+        if (p >= THRESHOLD !== q >= THRESHOLD) flipped++;
+        diff += Math.abs(p - q);
+      }
+      offset += chunk.length;
+    }
+    record("fl.disagreement", flipped / queued.length);
+    record("fl.probabilityDiff", diff / queued.length);
   }
 
   /**
@@ -243,13 +318,19 @@ export class Learner {
   private admit(sample: Sample): boolean {
     // TODO: this keys might take up too much memory, but they'll be cleaned up at the end of a round
     const key = `${sample.label}:${sample.features.join(",")}`;
-    const count = this.perSite.get(sample.site) ?? 0;
+    const admitted = this.perSite.get(sample.site) ?? 0;
 
-    if (this.trained.has(key) || count >= this.config.perSiteLimit)
+    if (this.trained.has(key)) {
+      if (this.measureFl) count("fl.rejectedDuplicate");
       return false;
+    }
+    if (admitted >= this.config.perSiteLimit) {
+      if (this.measureFl) count("fl.rejectedPerSite");
+      return false;
+    }
 
     this.trained.add(key);
-    this.perSite.set(sample.site, count + 1);
+    this.perSite.set(sample.site, admitted + 1);
     return true;
   }
 
@@ -259,16 +340,44 @@ export class Learner {
       const deltas = this.local.trainableWeights.map((w, i) =>
         w.read().sub(this.global.trainableWeights[i].read()).flatten(),
       );
-      return clip([concat(deltas)], this.config.updateClip)[0];
+      const flat = concat(deltas);
+      if (this.measureFl) {
+        const norm = globalNorm([flat]);
+        record("fl.updateNorm", norm);
+        record("fl.updateClipped", Number(norm > this.config.updateClip));
+      }
+      return clip([flat], this.config.updateClip)[0];
     });
     const data = update.dataSync() as Float32Array;
     update.dispose();
+    if (this.measureFl) {
+      since("fl.roundMs", this.roundStart);
+      record("fl.roundRows", this.roundRows);
+      // plaintext; TODO(secret sharing): share sizes instead
+      record("fl.updateBytes", data.byteLength);
+    }
+    // TODO(secret sharing): time share + upload (fl.shareMs, fl.uploadMs)
     this.sendUpdate(data);
+    this.roundStart = now();
+    this.roundRows = 0;
     this.local.setWeights(this.global.getWeights());
     this.steps = 0;
     this.perSite.clear();
     this.trained.clear();
   }
+}
+
+/** Joint L2 norm. Doesn't dispose input. */
+function globalNorm(tensors: Tensor[]): number {
+  const norm = tidy(() =>
+    tensors
+      .map((t) => t.square().sum())
+      .reduce((a, b) => a.add(b))
+      .sqrt(),
+  );
+  const value = norm.dataSync()[0];
+  norm.dispose();
+  return value;
 }
 
 /** Sum of two gradients, disposing both. */

@@ -1,4 +1,5 @@
-import type { LearnerReply, OffscreenRequest } from "./worker";
+import { now } from "@/perf";
+import type { OffscreenReply, OffscreenRequest } from "./worker";
 
 // Relays the service worker's requests to the learner, which runs in a worker so training doesn't block the main
 // thread this document shares with the popup.
@@ -6,12 +7,12 @@ import type { LearnerReply, OffscreenRequest } from "./worker";
 const worker = new Worker(new URL("./worker.ts", import.meta.url), {
   type: "module",
 });
-const replies = new Map<number, (reply: LearnerReply) => void>();
+const replies = new Map<number, (reply: OffscreenReply) => void>();
 let next = 0;
 
 worker.onmessage = ({
   data,
-}: MessageEvent<{ id: number; reply: LearnerReply }>) => {
+}: MessageEvent<{ id: number; reply: OffscreenReply }>) => {
   replies.get(data.id)?.(data.reply);
   replies.delete(data.id);
 };
@@ -22,7 +23,8 @@ chrome.runtime.onMessage.addListener(
     if (message?.target !== "offscreen") return;
     const id = next++;
     replies.set(id, sendResponse);
-    worker.postMessage({ id, message });
+    // for hop.*
+    worker.postMessage({ id, message, relayedAt: now() });
     return true;
   },
 );

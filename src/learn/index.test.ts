@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs'
-import { io, setBackend } from '@tensorflow/tfjs'
+import { io, memory, setBackend } from '@tensorflow/tfjs'
 import '@tensorflow/tfjs-backend-wasm'
 import { beforeAll, expect, test } from 'vitest'
 import { flags } from '@/flags'
 import { loadModel, predict, THRESHOLD } from '@/model'
+import { setSink, type Sample } from '@/perf'
 import { Learner, Reservoir, type LearnConfig } from '.'
 
 // FIXME: use the copy of the model in this repo once it's there (see src/collect/index.ts)
@@ -25,10 +26,16 @@ beforeAll(async () => {
 })
 
 /** A learner on fresh copies of the model, collecting its round updates. */
-async function learner(overrides: Partial<LearnConfig> = {}) {
+async function learner(overrides: Partial<LearnConfig> = {}, measureFl = false) {
   const updates: Float32Array[] = []
   const config = { ...flags.learn, batchSize: 1000, idleMs: 1000, roundSteps: 1000, replayFraction: 0, ...overrides }
-  const l = new Learner(await loadModel(json, weights), await loadModel(json, weights), config, (u) => updates.push(u))
+  const l = new Learner(
+    await loadModel(json, weights),
+    await loadModel(json, weights),
+    config,
+    (u) => updates.push(u),
+    measureFl,
+  )
   return { learner: l, updates }
 }
 
@@ -116,6 +123,50 @@ test('trains on a row once per round, and at most perSiteLimit per site', async 
   await trainOn(alone.learner, 1)
   alone.learner.endRound()
   expect(maxDiff(updates[0], alone.updates[0])).toBeLessThan(1e-6)
+})
+
+test('frees its tensors, also with the training metrics', async () => {
+  for (const measureFl of [false, true]) {
+    const { learner: l } = await learner({ roundSteps: 2, chunkSize: 3 }, measureFl)
+    await trainOn(l, 6)
+    const tensors = memory().numTensors
+    await trainOn(l, 6, () => 'b', 6)
+    await trainOn(l, 6, () => 'c', 12)
+    expect(memory().numTensors).toBe(tensors)
+  }
+})
+
+test('records the training metrics only with measureFl', async () => {
+  const samples: Sample[] = []
+  setSink((s) => samples.push(...s))
+  const names = async () => {
+    await new Promise((r) => setTimeout(r))
+    return new Set(samples.splice(0).map(([name]) => name))
+  }
+  await names()
+
+  for (const measureFl of [false, true]) {
+    const { learner: l } = await learner({ roundSteps: 2 }, measureFl)
+    await trainOn(l, 4)
+    await trainOn(l, 4, () => 'b', 4)
+    const fl = [...(await names())].filter((n) => n.startsWith('fl.'))
+    if (!measureFl) expect(fl).toEqual([])
+    else
+      expect(fl).toEqual(
+        expect.arrayContaining([
+          'fl.loss',
+          'fl.siteGradNorm',
+          'fl.siteClipped',
+          'fl.disagreement',
+          'fl.probabilityDiff',
+          'fl.updateNorm',
+          'fl.updateClipped',
+          'fl.roundMs',
+          'fl.roundRows',
+          'fl.updateBytes',
+        ]),
+      )
+  }
 })
 
 test('reservoir keeps at most its capacity and samples distinct items', () => {

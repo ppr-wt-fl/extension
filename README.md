@@ -35,9 +35,12 @@ src/background/          service worker: webRequest, refetches, chrome.debugger 
 src/content/             content scripts: fetch/XHR patch (MAIN world), relay to the background
 src/collect/             Observation type, observe(): features, then classification in src/offscreen
 src/model/               any tfjs Layers model: loading, predict(), gradient(), inspectModes()
-src/offscreen/           offscreen document + worker: learner and verdicts, outlive the service worker
+src/offscreen/           offscreen document + worker: learner, verdicts and rule ids, outlive the service worker
+src/block/               dynamic block rules: applies the worker's rule changes, restores them to a new worker
 src/learn/               batches requests, classifies and trains on each batch, FedAvg rounds (flags.learn)
 src/label/               label(): training labels, black box (stub)
+src/perf/                performance metrics: record() in every context, aggregated in the offscreen worker
+bench/                   page load with and without the extension, plus its metrics (Puppeteer + CDP)
 src/features/            TS side of feature extraction: extract(), presets, TS features
 features/                Rust feature extraction
   src/lib.rs             maps feature names to values (features()); wasm API: extract(), inline_scripts(), inspect()
@@ -57,13 +60,13 @@ MV3 webRequest doesn't expose response bodies, so they are collected in several 
 `Observation` (`src/collect`). Its features go to the learner in the offscreen document's worker (`src/offscreen`),
 which classifies it with the next batch and trains on it if it has a label:
 
-| Source       | Where                          | Covers                                       | Body                                                    |
-|--------------|--------------------------------|----------------------------------------------|---------------------------------------------------------|
-| `webRequest` | `src/background/index.ts`      | every request from a tab                     | none, for types whose features don't read it            |
-| `refetch`    | `src/background/index.ts`      | GET `script`, `sub_frame`, `main_frame`      | downloaded again; cache, cookies and Referer can differ |
-| `patch`      | `src/content/patch.ts`         | the page's own `fetch`/XHR                   | the exact response the page got                         |
-| `dom`        | `src/content/relay.ts`         | every frame, on `load`                       | `outerHTML`: the document after parsing and scripts      |
-| `debugger`   | `src/background/debugger.ts`   | every request, behind `flags.debugger`       | the exact response, through the DevTools Protocol       |
+| Source       | Where                        | Covers                                  | Body                                                    |
+| ------------ | ---------------------------- | --------------------------------------- | ------------------------------------------------------- |
+| `webRequest` | `src/background/index.ts`    | every request from a tab                | none, for types whose features don't read it            |
+| `refetch`    | `src/background/index.ts`    | GET `script`, `sub_frame`, `main_frame` | downloaded again; cache, cookies and Referer can differ |
+| `patch`      | `src/content/patch.ts`       | the page's own `fetch`/XHR              | the exact response the page got                         |
+| `dom`        | `src/content/relay.ts`       | every frame, on `load`                  | `outerHTML`: the document after parsing and scripts     |
+| `debugger`   | `src/background/debugger.ts` | every request, behind `flags.debugger`  | the exact response, through the DevTools Protocol       |
 
 External scripts (`<script src>`) are therefore captured by `refetch`, or by `debugger` when enabled. The fetch/XHR
 patch doesn't see them. `patch.ts` runs in the page's JS world at `document_start` and must not import or export
@@ -82,16 +85,16 @@ which matches the published AdFlush data. The 27 features of the AdFlush model a
 ### Use
 
 ```ts
-import { extract, initRust, inlineScripts, presets } from './features'
+import { extract, initRust, inlineScripts, presets } from "./features";
 
-await initRust()
+await initRust();
 
 const values = extract(presets.adflush, {
-  url: 'https://securepubads.g.doubleclick.net/tag/js/gpt.js',
-  topLevelUrl: 'https://www.theguardian.com/',
-  type: 'script',               // chrome.webRequest resource type
+  url: "https://securepubads.g.doubleclick.net/tag/js/gpt.js",
+  topLevelUrl: "https://www.theguardian.com/",
+  type: "script", // chrome.webRequest resource type
   body: scriptText,
-})                              // Float64Array in the order of presets.adflush
+}); // Float64Array in the order of presets.adflush
 ```
 
 `body` is the JavaScript for `script` and the HTML for `sub_frame` and `main_frame`; other types ignore it.
@@ -103,17 +106,17 @@ scripts with oxc, which differs where acorn-loose has to recover: line-wrapped m
 JSON `<script>` blocks (far off) and broken code. For exact values, parse with acorn-loose 8.4.0 and pass the ASTs:
 
 ```ts
-import { parse } from 'acorn-loose'
+import { parse } from "acorn-loose";
 
-const scripts = type === 'script' ? [body] : inlineScripts(body)
+const scripts = type === "script" ? [body] : inlineScripts(body);
 const acornAsts = scripts.map((s) => {
   try {
-    return JSON.stringify(parse(s, { ecmaVersion: 2022 }))
+    return JSON.stringify(parse(s, { ecmaVersion: 2022 }));
   } catch {
-    return '' // BigInt literals make JSON.stringify throw; the script then gets no features, like in Python
+    return ""; // BigInt literals make JSON.stringify throw; the script then gets no features, like in Python
   }
-})
-extract(presets.adflush, { url, topLevelUrl, type, body, acornAsts })
+});
+extract(presets.adflush, { url, topLevelUrl, type, body, acornAsts });
 ```
 
 ### Add a feature
@@ -161,6 +164,32 @@ scripts and pages can be compared by writing its fixture elsewhere and running w
 - Domains use the suffix list bundled with tldextract 5.1.2; YOPO's WebGraph environment doesn't pin tldextract.
 - Inline scripts are found with a regex that follows Python 3.8's html.parser (`</script>` ends a script,
   comments are skipped), not with BeautifulSoup itself.
+
+## Performance
+
+Behind `flags.perf` (`src/flags.ts`). Every context records samples with `record`/`since`/`count` (`src/perf`); the
+service worker sends them to the offscreen worker every `flushMs`, which aggregates them (count, sum, min, max,
+p50/p95/p99 over the last `window` samples). The popup shows them, `bench/` reads them. Lost with the offscreen
+document, except `sw.starts` and `offscreen.creations` (chrome.storage.session).
+
+- Latency: `sw.timeToRule` (request completed until its block rule is active, the request's repeats load until
+  then), `sw.timeToVerdict`, and its stages: `sw.eventDelay`, `sw.topLevelUrl`, `sw.refetch`, `sw.ready`,
+  `sw.features.<type>`, `hop.*` (SW → offscreen → worker → SW), `learner.queueWait`, `learner.train`/`infer`/`batch`,
+  `worker.handle`, `sw.ruleFlush`
+- Blocking: `block.hits` (rules that blocked, needs declarativeNetRequestFeedback, unpacked only), `rules.added` (each
+  one's request loaded first), `block.loadedDespiteRule`, `decision.flips`, `sources.disagree`; gauge `rules` and,
+  in the popup, `rules.installed` against `rules.cap`
+- Memory: gauges `tf.numTensors`/`tf.numBytes` (leaks), `verdicts`, `learner.*`
+- Startup: `startup.*` in the worker, `sw.offscreenCreate`
+- Page: `page.patchMs`, `page.relayMs`, `page.outerHtmlMs` (content scripts' main-thread time), `sw.refetchBytes`
+- Training (`flags.perf.fl`, off): `fl.loss`, `fl.siteGradNorm`/`siteClipped`, `fl.updateNorm`/`updateClipped`,
+  `fl.rejected*`, `fl.roundMs`, `fl.roundRows`, `fl.updateBytes`, `fl.disagreement` (local vs global verdicts, a
+  second forward pass). Secret sharing metrics are TODOs at `SendUpdate` in `src/learn`.
+
+```sh
+bun run build
+bun run bench -- --runs 10 --warmup 2 --cpu 4 http://localhost:8000/page.html   # CHROME=... for another binary
+```
 
 ## TODO
 

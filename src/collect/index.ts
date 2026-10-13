@@ -1,9 +1,18 @@
+import { applyRule, blockable, installedRules, ruleKey } from "@/block";
 import { label } from "@/label";
-import type { LearnerReply, LearnerRequest } from "@/offscreen/worker";
+import type {
+  LearnerReply,
+  LearnerRequest,
+  RestoreRequest,
+} from "@/offscreen/worker";
 // FIXME: copy the model into this repo instead of importing it from the robustness-evaluation run
 import featureOrder from "../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/feature_order.json";
 import wasmUrl from "../../features/pkg/adflush_features_bg.wasm?url";
-import { extract, initRust, type RequestInfo } from "../features";
+import {
+  extract as extractFeatures,
+  initRust,
+  type RequestInfo,
+} from "../features";
 import { flags } from "@/flags";
 
 /**
@@ -43,23 +52,34 @@ const rust = initRust(wasmUrl);
 
 // NOTE: maybe calling chrome.runtime.getContexts every time might be a bit too much
 let creatingOffscreen: Promise<void> | undefined;
+/** Creates the offscreen document holding the learner (src/offscreen) and gives it the installed rules, unless it exists. */
 async function ensureOffscreenDocument(): Promise<void> {
   const contexts = await chrome.runtime.getContexts({
     contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
   });
-  if (contexts.length > 0) return;
+  // a document still being created doesn't have the rules yet
+  if (contexts.length > 0 && !creatingOffscreen) return;
 
-  creatingOffscreen ??= chrome.offscreen
-    .createDocument({
+  creatingOffscreen ??= (async () => {
+    await chrome.offscreen.createDocument({
       url: "src/offscreen/index.html",
       reasons: [chrome.offscreen.Reason.WORKERS],
       justification: "Runs the ad blocking model and its training in a worker",
-    })
-    .finally(() => (creatingOffscreen = undefined));
+    });
+
+    const restore: RestoreRequest = {
+      target: "offscreen",
+      restore: await installedRules(),
+    };
+    const reply: LearnerReply = await chrome.runtime.sendMessage(restore);
+    if ("error" in reply) throw new Error(reply.error);
+  })().finally(() => (creatingOffscreen = undefined));
   await creatingOffscreen;
 }
 
-/** Classifies an observation with the next batch, which also trains on it if it has a label (src/learn). */
+/** Classifies an observation with the next batch, which also trains on it if it has a label (src/learn).
+ * Computes features on callers thread
+ * */
 export async function observe(obs: Observation): Promise<void> {
   if (obs.req.type === "xmlhttprequest") {
     // TODO: the features ignore xhr bodies, even for JS the page evals. Classify them as "script", or only keep them as data?
@@ -70,12 +90,13 @@ export async function observe(obs: Observation): Promise<void> {
 
   await Promise.all([rust, ensureOffscreenDocument()]);
 
-  const features = extract(FEATURES, obs.req);
+  const features = extractFeatures(FEATURES, obs.req);
 
   // TODO: skip classifying a body identical to one already classified for this request (hash it)
   const request: LearnerRequest = {
     target: "offscreen",
-    request: JSON.stringify([obs.req.url, obs.req.topLevelUrl, obs.req.type]),
+    request: ruleKey(obs.req),
+    blockable: blockable(obs.req),
     source: obs.source,
     features: [...features],
     site: new URL(obs.req.topLevelUrl).hostname,
@@ -83,10 +104,10 @@ export async function observe(obs: Observation): Promise<void> {
   };
   const reply: LearnerReply = await chrome.runtime.sendMessage(request);
   if ("error" in reply) throw new Error(reply.error);
-  if (reply.block) {
-    // TODO: add a declarativeNetRequest rule
-  } else {
-    // TODO: with "canonical", a better source can overturn a block: remove the rule
+  // with "canonical", a better source can also overturn a block, which removes its rule
+
+  if (reply.rule) {
+    applyRule(reply.rule, obs.req);
   }
 }
 

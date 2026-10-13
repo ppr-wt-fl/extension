@@ -15,6 +15,9 @@ import {
   type Variable,
 } from "@tensorflow/tfjs";
 
+/** Probability at or above which a request is blocked. */
+export const THRESHOLD = 0.5;
+
 /**
  * Loads a tfjs Layers model from its model.json and weight shard. Any architecture works, as long as it maps
  * feature vectors [n, features] to block probabilities [n, 1].

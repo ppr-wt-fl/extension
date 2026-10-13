@@ -3,10 +3,8 @@ import { io, layers, sequential, setBackend } from "@tensorflow/tfjs";
 import "@tensorflow/tfjs-backend-wasm";
 import { beforeAll, expect, test } from "vitest";
 import { presets } from "../features";
-import { inspectModes, loadModel, predict } from ".";
+import { inspectModes, loadModel, predict, THRESHOLD } from ".";
 
-/** Probability at or above which a request is blocked. */
-const THRESHOLD = 0.5;
 console.warn(`Using a decission threshold of ${THRESHOLD}`);
 
 // FIXME: use the copy of the model in this repo once it's there (see src/collect/index.ts)

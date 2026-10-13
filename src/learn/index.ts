@@ -80,7 +80,10 @@ export class Learner {
   /** Submit samples for inference and training */
   submit(sample: Sample): Promise<number> {
     return new Promise((resolve, reject) => {
+      // add to queue
       this.queue.push({ sample, resolve, reject });
+
+      // queue handling (idle time + max capacity)
       clearTimeout(this.timer);
       if (this.queue.length >= this.config.batchSize) {
         this.flush();

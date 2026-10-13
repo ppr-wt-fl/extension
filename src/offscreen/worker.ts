@@ -5,20 +5,22 @@ import tfSimdUrl from "@tensorflow/tfjs-backend-wasm/dist/tfjs-backend-wasm-simd
 import type { Source } from "@/collect";
 import { flags } from "@/flags";
 import { Learner } from "@/learn";
-import { inputSize, loadModel } from "@/model";
+import { inputSize, loadModel, THRESHOLD } from "@/model";
 // FIXME: copy the model into this repo instead of importing it from the robustness-evaluation run
 import modelJson from "../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/model.json";
 import featureOrder from "../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/feature_order.json";
 import weightsUrl from "../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/group1-shard1of1.bin?url";
 
-// Holds the state that should outlive the service worker, which Chrome stops when idle: the learner and the
-// verdicts. Lost when the browser or the extension restarts.
+// Holds the state that should outlive the service worker, which Chrome stops when idle: the learner, the
+// verdicts and the block rules' ids. Lost when the browser or the extension restarts, except the rules (src/block).
 
 /** One observation of a request, from the service worker. */
 export interface LearnerRequest {
   target: "offscreen";
-  /** Identifies the request across its sources */
+  /** Identifies the request across its sources, `ruleKey` in src/block */
   request: string;
+  /** Whether the request can get a block rule, `blockable` in src/block */
+  blockable: boolean;
   source: Source;
   features: number[];
   /** Top-level site of the request */
@@ -27,7 +29,23 @@ export interface LearnerRequest {
   label?: 0 | 1;
 }
 
-export type LearnerReply = { block: boolean } | { error: string };
+/** The dynamic rules installed before this worker started, so it continues from them. */
+export interface RestoreRequest {
+  target: "offscreen";
+  restore: { key: string; id: number }[];
+}
+
+export type OffscreenRequest = LearnerRequest | RestoreRequest;
+
+/** A block rule the service worker adds or removes. */
+export interface RuleChange {
+  action: "add" | "remove";
+  id: number;
+}
+
+// TODO: feels like this type shouldn't live here
+/** `rule` is set when the request's decision changed. */
+export type LearnerReply = { rule?: RuleChange } | { error: string };
 
 /**
  * How close each source's body is to what the page got, higher is closer. The debugger and the patch see the page's
@@ -41,11 +59,30 @@ const BODY_RANK: Record<Source, number> = {
   webRequest: 0,
 };
 
-/** Probability at or above which a request is blocked. */
-const THRESHOLD = 0.5;
-
 /** Latest verdict of each source, by request. Grows until the offscreen document closes. */
 const verdicts = new Map<string, Map<Source, boolean>>();
+
+/**
+ * Id of the block rule of each request key that has one. The decision only changes the rules when it changes, as
+ * every source of a request sends its own verdict.
+ * TODO: evict old rules before chrome.declarativeNetRequest.MAX_NUMBER_OF_DYNAMIC_RULES, adding fails past it
+ */
+const rules = new Map<string, number>();
+let nextRuleId = 1;
+
+/** The rule change a request's decision needs, if any. */
+function ruleChange(key: string, block: boolean): RuleChange | undefined {
+  const id = rules.get(key);
+  if (block && id === undefined) {
+    const id = nextRuleId++;
+    rules.set(key, id);
+    return { action: "add", id };
+  }
+  if (!block && id !== undefined) {
+    rules.delete(key);
+    return { action: "remove", id };
+  }
+}
 
 /** Whether to block a request, from its sources' verdicts, as set by `flags.reconcile`. */
 function decide(bySource: Map<Source, boolean>): boolean {
@@ -83,14 +120,25 @@ const learnerPromise = (async () => {
   return new Learner(global, local);
 })();
 
+// Thank god this is single threaded, other wise this would be concurrency hell lol
 self.onmessage = async ({
   data: { id, message },
-}: MessageEvent<{ id: number; message: LearnerRequest }>) => {
+}: MessageEvent<{ id: number; message: OffscreenRequest }>) => {
+  if ("restore" in message) {
+    for (const rule of message.restore) {
+      rules.set(rule.key, rule.id);
+      nextRuleId = Math.max(nextRuleId, rule.id + 1);
+    }
+    self.postMessage({ id, reply: {} satisfies LearnerReply });
+    return;
+  }
+
   let reply: LearnerReply;
 
   try {
     // TODO: puts us at the end of the eventQueue, suboptimal
     const learner = await learnerPromise;
+
     const probability = await learner.submit({
       features: Float64Array.from(message.features),
       site: message.site,
@@ -105,8 +153,12 @@ self.onmessage = async ({
       bySource.set(message.source, probability >= THRESHOLD),
     );
 
-    // NOTE: We might add/remove a rule a couple of times
-    reply = { block: decide(bySource) };
+    const block = decide(bySource);
+    let rule = undefined;
+    if (message.blockable) {
+      rule = ruleChange(message.request, block);
+    }
+    reply = { rule };
   } catch (error) {
     reply = { error: String(error) };
   }

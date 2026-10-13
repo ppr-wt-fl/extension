@@ -183,7 +183,7 @@ clears it; aggregation (percentiles etc.) happens offline. Upload to a server is
   `rules.installed` against `rules.cap`
 - Memory: gauges `tf.numTensors`/`tf.numBytes` (leaks), `verdicts`, `learner.*`, sampled by the worker every
   `flushMs`
-- Startup: `startup.*` in the worker, `sw.offscreenCreate`, counters `sw.starts`, `offscreen.creations`
+- Startup: `startup.*` in the worker, `sw.offscreenCreate`, counters `sw.starts`, `browser.starts`, `offscreen.creations`
 - Page: `page.patchMs`, `page.relayMs`, `page.outerHtmlMs` (content scripts' main-thread time), `sw.refetchBytes`
 - Training (`flags.perf.fl`, off): `fl.loss`, `fl.siteGradNorm`/`siteClipped`, `fl.updateNorm`/`updateClipped`,
   `fl.rejected*`, `fl.roundMs`, `fl.roundRows`, `fl.updateBytes`, `fl.disagreement` (local vs global verdicts, a

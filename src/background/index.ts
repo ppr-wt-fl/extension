@@ -7,6 +7,8 @@ import { captureWithDebugger } from "./debugger";
 
 setSink(outboxSink("sw"), flags.perf.flushMs);
 count("sw.starts");
+// profile start (browser launch), not SW wake-ups
+chrome.runtime.onStartup.addListener(() => count("browser.starts"));
 
 chrome.webRequest.onCompleted.addListener(
   async (details) => {

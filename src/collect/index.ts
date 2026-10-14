@@ -49,7 +49,8 @@ const FEATURES = featureOrder.feature_order.map((name) =>
   name === "keyword_char_present" ? "keyword_raw_present" : name,
 );
 
-const rust = initRust(wasmUrl);
+// in dev wasmUrl is root-relative to the vite server, not the extension origin
+const rust = initRust(new URL(wasmUrl, import.meta.url));
 
 // NOTE: maybe calling chrome.runtime.getContexts every time might be a bit too much
 let creatingOffscreen: Promise<void> | undefined;

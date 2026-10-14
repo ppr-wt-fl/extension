@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import type { Source } from '@/collect'
 import { flags } from '@/flags'
-import { decide, MAX_RULES, ruleChange, rules } from './rules'
+import { decide, MAX_RULES, restoreRules, ruleChange, rules } from './rules'
 
 test.each([
   // [reconcile, verdicts by source, block]
@@ -28,4 +28,11 @@ test('ruleChange adds once, removes once, evicts the oldest past the limit', () 
   expect(change.evict).toBe(oldest)
   expect(rules.has('k0')).toBe(false)
   expect(rules.size).toBe(MAX_RULES)
+})
+
+test('restoreRules replaces the map, ids never go backwards', () => {
+  restoreRules([{ key: 'x', id: 7 }])
+  restoreRules([{ key: 'y', id: 3 }])
+  expect([...rules]).toEqual([['y', 3]])
+  expect(ruleChange('z', true)!.id).toBeGreaterThan(7)
 })

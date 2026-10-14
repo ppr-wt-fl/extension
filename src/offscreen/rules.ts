@@ -35,8 +35,12 @@ const BODY_RANK: Record<Source, number> = {
 export const rules = new Map<string, number>();
 let nextRuleId = 1;
 
-/** Continues from the rules installed before the worker started. */
+/**
+ * Continues from the installed rules. Replaces the map: changes of a dead service worker may not have been installed.
+ * Ids never go backwards, so a repeated restore can't reuse an installed id.
+ */
 export function restoreRules(installed: { key: string; id: number }[]): void {
+  rules.clear();
   for (const rule of installed) {
     rules.set(rule.key, rule.id);
     nextRuleId = Math.max(nextRuleId, rule.id + 1);

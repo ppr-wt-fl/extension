@@ -57,21 +57,28 @@ const rust = initRust(new URL(wasmUrl, import.meta.url));
 
 // NOTE: maybe calling chrome.runtime.getContexts every time might be a bit too much
 let creatingOffscreen: Promise<void> | undefined;
-/** Creates the offscreen document holding the learner (src/offscreen) and gives it the installed rules, unless it exists. */
+/**
+ * Whether this service worker gave the document the installed rules. Else its rule ids restart at 1 and overwrite
+ * installed rules: the restore failed, or a previous service worker died between creating the document and restoring.
+ */
+let restored = false;
+/** Creates the offscreen document holding the learner (src/offscreen) unless it exists, and gives it the installed rules. */
 async function ensureOffscreenDocument(): Promise<void> {
   const contexts = await chrome.runtime.getContexts({
     contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
   });
   // a document still being created doesn't have the rules yet
-  if (contexts.length > 0 && !creatingOffscreen) return;
+  if (contexts.length > 0 && restored && !creatingOffscreen) return;
 
   creatingOffscreen ??= (async () => {
     const start = now();
-    await chrome.offscreen.createDocument({
-      url: "src/offscreen/index.html",
-      reasons: [chrome.offscreen.Reason.WORKERS],
-      justification: "Runs the ad blocking model and its training in a worker",
-    });
+    if (contexts.length === 0) {
+      await chrome.offscreen.createDocument({
+        url: "src/offscreen/index.html",
+        reasons: [chrome.offscreen.Reason.WORKERS],
+        justification: "Runs the ad blocking model and its training in a worker",
+      });
+    }
 
     const restore: RestoreRequest = {
       target: "offscreen",
@@ -79,10 +86,13 @@ async function ensureOffscreenDocument(): Promise<void> {
     };
     const reply: LearnerReply = await chrome.runtime.sendMessage(restore);
     if ("error" in reply) throw new Error(reply.error);
+    restored = true;
     // model load: startup.* in worker
-    since("sw.offscreenCreate", start);
-    count("offscreen.creations");
-    log.info("offscreen document created, restored rules:", restore.restore.length);
+    if (contexts.length === 0) {
+      since("sw.offscreenCreate", start);
+      count("offscreen.creations");
+    }
+    log.info("offscreen document ready, restored rules:", restore.restore.length);
   })().finally(() => (creatingOffscreen = undefined));
   await creatingOffscreen;
 }

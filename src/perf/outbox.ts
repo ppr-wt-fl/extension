@@ -20,8 +20,15 @@ function openIndexedDB(): Promise<IDBDatabase> {
         autoIncrement: true,
       });
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      // reopen on next use: a closed connection would fail every write
+      request.result.onclose = () => (db = undefined);
+      resolve(request.result);
+    };
+    request.onerror = () => {
+      db = undefined;
+      reject(request.error);
+    };
   });
   return db;
 }

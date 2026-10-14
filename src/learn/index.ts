@@ -117,6 +117,8 @@ export class Learner {
       try {
         await this.run(queued);
       } catch (error) {
+        // rejecting after the verdicts resolved does nothing, e.g. a failed SGD step
+        log.error(error);
         for (const sample of queued) {
           sample.reject(error);
         }

@@ -77,8 +77,9 @@ window.fetch = async function (
   const response = await fetch.apply(this, args);
   const start = performance.now();
   const [input, init] = args;
-  const method = (
-    init?.method ?? (input instanceof Request ? input.method : "GET")
+  // native fetch/XHR coerce the method; throwing here would fail the page's request
+  const method = String(
+    init?.method ?? (input instanceof Request ? input.method : "GET"),
   ).toUpperCase();
   // opaque (no-cors) responses have neither URL nor body
   if (response.url) {
@@ -118,7 +119,7 @@ XMLHttpRequest.prototype.open = function (
   this: XMLHttpRequest,
   ...args: Parameters<typeof open>
 ) {
-  methods.set(this, args[0].toUpperCase());
+  methods.set(this, String(args[0]).toUpperCase());
   return open.apply(this, args);
 } as typeof open;
 

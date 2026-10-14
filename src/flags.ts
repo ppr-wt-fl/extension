@@ -6,6 +6,11 @@ export const flags = {
    */
   debugger: false,
   /**
+   * Capture fetch/XHR responses by patching them in the page (src/content/patch.ts). Off: the script isn't injected and
+   * the background drops captured_by_patch messages, which the page could still post.
+   */
+  patchWebpageRequests: true,
+  /**
    * How the observations of one request (url, topLevelUrl, type) by different sources decide whether to block it:
    * - "canonical": the verdict on the body closest to what the page got (see `BODY_RANK` in src/collect)
    * - "any": block if any observation's verdict is block

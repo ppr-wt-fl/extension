@@ -1,6 +1,6 @@
-import { defineManifest } from '@crxjs/vite-plugin'
-import pkg from './package.json' with { type: 'json' }
-import { flags } from './src/flags.ts'
+import { defineManifest } from "@crxjs/vite-plugin";
+import pkg from "./package.json" with { type: "json" };
+import { flags } from "./src/flags.ts";
 
 export default defineManifest({
   manifest_version: 3,
@@ -8,40 +8,46 @@ export default defineManifest({
   description: pkg.description,
   version: pkg.version,
   icons: {
-    48: 'public/logo.png',
+    48: "public/logo.png",
   },
   action: {
     default_icon: {
-      48: 'public/logo.png',
+      48: "public/logo.png",
     },
-    default_popup: 'src/popup/index.html',
+    default_popup: "src/popup/index.html",
   },
   background: {
-    service_worker: 'src/background/index.ts',
-    type: 'module',
+    service_worker: "src/background/index.ts",
+    type: "module",
   },
   permissions: [
-    'webRequest',
-    'offscreen',
-    'declarativeNetRequest',
-    ...(flags.debugger ? ['debugger' as const] : []),
+    "webRequest",
+    "offscreen",
+    "declarativeNetRequest",
+    ...(flags.debugger ? ["debugger" as const] : []),
     // perf: IndexedDB outbox, rule hits (unpacked only)
-    ...(flags.perf.enabled ? ['unlimitedStorage' as const, 'declarativeNetRequestFeedback' as const] : []),
+    ...(flags.perf.enabled
+      ? ["unlimitedStorage" as const, "declarativeNetRequestFeedback" as const]
+      : []),
   ],
-  host_permissions: ['<all_urls>'],
+  host_permissions: ["<all_urls>"],
   content_scripts: [
+    ...(flags.patchWebpageRequests
+      ? [
+          {
+            // patches fetch/XHR before the page's scripts run
+            js: ["src/content/patch.ts"],
+            matches: ["<all_urls>"],
+            run_at: "document_start" as const,
+            all_frames: true,
+            world: "MAIN" as const,
+          },
+        ]
+      : []),
     {
-      // patches fetch/XHR before the page's scripts run
-      js: ['src/content/patch.ts'],
-      matches: ['<all_urls>'],
-      run_at: 'document_start',
-      all_frames: true,
-      world: 'MAIN',
-    },
-    {
-      js: ['src/content/relay.ts'],
-      matches: ['<all_urls>'],
-      run_at: 'document_start',
+      js: ["src/content/relay.ts"],
+      matches: ["<all_urls>"],
+      run_at: "document_start",
       all_frames: true,
     },
   ],
@@ -49,4 +55,4 @@ export default defineManifest({
     // instantiating the feature extraction wasm needs wasm-unsafe-eval
     extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
   },
-})
+});

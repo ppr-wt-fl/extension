@@ -76,6 +76,7 @@ chrome.runtime.onMessage.addListener((message: RelayMessage, sender) => {
   }
 
   const isPatch = message.source === "captured_by_patch";
+  if (isPatch && !flags.patchWebpageRequests) return;
   observe({
     source: message.source,
     req: {

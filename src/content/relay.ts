@@ -1,5 +1,5 @@
 // forwards patch.ts's captures and the frame's DOM to the background.
-import { flags } from "@/flags";
+// No imports: CRXJS would then load this script async, after early captures and maybe after `load`.
 
 /** What the content scripts send the background. */
 export type RelayMessage =
@@ -7,7 +7,7 @@ export type RelayMessage =
   | {
       source: "dom";
       body: string;
-      /** outerHTML time, with flags.perf */
+      /** outerHTML time */
       serializeMs?: number;
     }
   /** patch.ts main-thread time since last summary */
@@ -28,7 +28,6 @@ let relayMs = 0;
 let perfScheduled = false;
 
 function spent(start: number) {
-  if (!flags.perf.enabled) return;
   relayMs += performance.now() - start;
   if (perfScheduled) return;
   perfScheduled = true;
@@ -41,7 +40,7 @@ function flushPerf() {
   send({ source: "relay_perf", ms: relayMs });
   relayMs = 0;
 }
-if (flags.perf.enabled) addEventListener("pagehide", flushPerf);
+addEventListener("pagehide", flushPerf);
 
 window.addEventListener("message", (event) => {
   // the page can post this too, so patch messages are untrusted
@@ -49,7 +48,7 @@ window.addEventListener("message", (event) => {
     event.source === window && event.data?.[TAG];
   if (!data) return;
   if (data.source === "patch_perf") {
-    if (flags.perf.enabled) send(data);
+    send(data);
     return;
   }
   const start = performance.now();
@@ -62,11 +61,7 @@ window.addEventListener("load", () => {
     const start = performance.now();
     const body = document.documentElement.outerHTML;
     const serializeMs = performance.now() - start;
-    send({
-      source: "dom",
-      body,
-      serializeMs: flags.perf.enabled ? serializeMs : undefined,
-    });
+    send({ source: "dom", body, serializeMs });
     spent(start);
   }
 });

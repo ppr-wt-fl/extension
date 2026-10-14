@@ -32,6 +32,15 @@ export function record(name: string, value: number) {
   schedule();
 }
 
+const gauges = new Map<string, number>();
+
+/** Records a current size, only when it changed since the last call. */
+export function gauge(name: string, value: number) {
+  if (gauges.get(name) === value) return;
+  gauges.set(name, value);
+  record(name, value);
+}
+
 export function count(name: string, n = 1) {
   record(name, n);
 }

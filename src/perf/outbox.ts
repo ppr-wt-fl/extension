@@ -48,25 +48,25 @@ export async function exportOutbox(): Promise<{
   lastKey?: IDBValidKey;
 }> {
   const tx = (await open()).transaction(STORE);
-  const lines: string[] = [];
+  // one Blob per record: Chrome can keep Blob data off the JS heap, unlike millions of strings
+  const parts: Blob[] = [];
   let lastKey: IDBValidKey | undefined;
   await new Promise<void>((resolve, reject) => {
     const request = tx.objectStore(STORE).openCursor();
     request.onsuccess = () => {
       const cursor = request.result;
       if (!cursor) return resolve();
-      for (const row of decode(cursor.value as OutboxRecord))
-        lines.push(JSON.stringify(row));
+      const rows = [...decode(cursor.value as OutboxRecord)].map((row) =>
+        JSON.stringify(row),
+      );
+      parts.push(new Blob([rows.join("\n") + "\n"]));
       lastKey = cursor.key;
       cursor.continue();
     };
     request.onerror = () => reject(request.error);
   });
   return {
-    blob: new Blob(
-      lines.map((l) => l + "\n"),
-      { type: "application/x-ndjson" },
-    ),
+    blob: new Blob(parts, { type: "application/x-ndjson" }),
     lastKey,
   };
 }

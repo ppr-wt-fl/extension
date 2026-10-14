@@ -6,8 +6,15 @@ import type { Source } from "@/collect";
 import { flags } from "@/flags";
 import { Learner } from "@/learn";
 import { inputSize, loadModel, THRESHOLD } from "@/model";
-import { count, now, record, setSink, since } from "@/perf";
+import { count, gauge, now, setSink, since } from "@/perf";
 import { outboxSink } from "@/perf/outbox";
+import {
+  decide,
+  restoreRules,
+  type RuleChange,
+  ruleChange,
+  rules,
+} from "./rules";
 // FIXME: copy the model into this repo instead of importing it from the robustness-evaluation run
 import modelJson from "../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/model.json";
 import featureOrder from "../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/feature_order.json";
@@ -41,79 +48,30 @@ export interface RestoreRequest {
 
 export type OffscreenRequest = LearnerRequest | RestoreRequest;
 
-/** A block rule the service worker adds or removes. */
-export interface RuleChange {
-  action: "add" | "remove";
-  id: number;
-}
-
 // TODO: feels like this type shouldn't live here
 /** `rule` is set when the request's decision changed. `repliedAt`: `now()`, for hop.* */
 export type LearnerReply =
-  | { rule?: RuleChange; repliedAt?: number }
-  | { error: string };
+  { rule?: RuleChange; repliedAt?: number } | { error: string };
 
-/**
- * How close each source's body is to what the page got, higher is closer. The debugger and the patch see the page's
- * response itself, but the page can spoof patch messages. A refetch is a second response, the DOM isn't a response.
- */
-const BODY_RANK: Record<Source, number> = {
-  debugger: 4,
-  captured_by_patch: 3,
-  refetch: 2,
-  dom: 1,
-  webRequest: 0,
-};
-
-/** Latest verdict of each source, by request. Grows until the offscreen document closes. */
+/** Latest verdict of each source, by request, least recently observed first. */
 const verdicts = new Map<string, Map<Source, boolean>>();
-
-/**
- * Id of the block rule of each request key that has one. The decision only changes the rules when it changes, as
- * every source of a request sends its own verdict.
- * TODO: evict old rules before chrome.declarativeNetRequest.MAX_NUMBER_OF_DYNAMIC_RULES, adding fails past it
- */
-const rules = new Map<string, number>();
-let nextRuleId = 1;
-
-/** The rule change a request's decision needs, if any. */
-function ruleChange(key: string, block: boolean): RuleChange | undefined {
-  const id = rules.get(key);
-  if (block && id === undefined) {
-    const id = nextRuleId++;
-    rules.set(key, id);
-    return { action: "add", id };
-  }
-  if (!block && id !== undefined) {
-    rules.delete(key);
-    return { action: "remove", id };
-  }
-}
-
-/** Whether to block a request, from its sources' verdicts, as set by `flags.reconcile`. */
-function decide(bySource: Map<Source, boolean>): boolean {
-  if (flags.reconcile === "any") return [...bySource.values()].some(Boolean);
-  const best = [...bySource.keys()].reduce((a, b) =>
-    BODY_RANK[b] > BODY_RANK[a] ? b : a,
-  );
-  return bySource.get(best)!;
-}
+const MAX_VERDICTS = 50_000;
 
 setSink(outboxSink("worker"), flags.perf.flushMs);
 
 let learner: Learner | undefined;
 
-// Gauges: current sizes, as samples every flush
+// Gauges: current sizes, as a sample when they change
 if (flags.perf.enabled) {
   setInterval(() => {
     const tf = memory();
-    record("verdicts", verdicts.size);
-    record("rules", rules.size);
+    gauge("verdicts", verdicts.size);
+    gauge("rules", rules.size);
     // growing = leak
-    record("tf.numTensors", tf.numTensors);
-    record("tf.numBytes", tf.numBytes);
+    gauge("tf.numTensors", tf.numTensors);
+    gauge("tf.numBytes", tf.numBytes);
     for (const [k, v] of Object.entries(learner?.sizes() ?? {}))
-      record(`learner.${k}`, v);
+      gauge(`learner.${k}`, v);
   }, flags.perf.flushMs);
 }
 
@@ -157,13 +115,14 @@ const learnerPromise = (async () => {
 // Thank god this is single threaded, other wise this would be concurrency hell lol
 self.onmessage = async ({
   data: { id, message, relayedAt },
-}: MessageEvent<{ id: number; message: OffscreenRequest; relayedAt: number }>) => {
+}: MessageEvent<{
+  id: number;
+  message: OffscreenRequest;
+  relayedAt: number;
+}>) => {
   const receivedAt = now();
   if ("restore" in message) {
-    for (const rule of message.restore) {
-      rules.set(rule.key, rule.id);
-      nextRuleId = Math.max(nextRuleId, rule.id + 1);
-    }
+    restoreRules(message.restore);
     self.postMessage({ id, reply: {} satisfies LearnerReply });
     return;
   }
@@ -189,10 +148,15 @@ self.onmessage = async ({
       verdicts.get(message.request) ?? new Map<Source, boolean>();
     const before = bySource.size > 0 ? decide(bySource) : undefined;
 
+    // re-inserted to move it to the end, so the least recently observed is evicted
+    verdicts.delete(message.request);
     verdicts.set(
       message.request,
       bySource.set(message.source, probability >= THRESHOLD),
     );
+    if (verdicts.size > MAX_VERDICTS) {
+      verdicts.delete(verdicts.keys().next().value!);
+    }
 
     const block = decide(bySource);
     count(block ? "decision.block" : "decision.allow");
@@ -211,6 +175,7 @@ self.onmessage = async ({
       rule = ruleChange(message.request, block);
       // its request already loaded
       if (rule?.action === "add") count("rules.added");
+      if (rule?.evict !== undefined) count("rules.evicted");
       if (rule?.action === "remove") count("rules.removed");
     } else if (block) {
       count("block.notBlockable");

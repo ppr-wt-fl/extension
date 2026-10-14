@@ -1,5 +1,5 @@
 import type { RequestInfo } from "@/features";
-import type { RuleChange } from "@/offscreen/worker";
+import type { RuleChange } from "@/offscreen/rules";
 import { now, since } from "@/perf";
 
 // Applies the block rules the offscreen worker decides on (src/offscreen/worker.ts), as dynamic rules: they survive
@@ -24,17 +24,19 @@ export function ruleKey(req: RequestInfo): string {
 
 /**
  * Whether a request can get a block rule. Not main_frame: that blocks the page itself. Not without a site
- * (file:, about:). Not a URL with *, ^ or |, which urlFilter can't match literally.
+ * (file:, about:). Not a URL with *, ^ or |, which urlFilter can't match literally, or with non-ASCII or whitespace,
+ * which makes the rule invalid and so its whole batch fail.
  */
 export function blockable(req: RequestInfo): boolean {
   return (
     req.type !== "main_frame" &&
     new URL(req.topLevelUrl).hostname !== "" &&
+    /^[\x21-\x7e]+$/.test(req.url) &&
     !/[*^|]/.test(req.url)
   );
 }
 
-function rule(id: number, req: RequestInfo): Rule {
+export function rule(id: number, req: RequestInfo): Rule {
   return {
     id,
     priority: 1,
@@ -85,6 +87,10 @@ export function applyRule(
   observedAt: number,
 ): void {
   pending.set(change.id, change.action === "add" ? rule(change.id, req) : null);
+  if (change.evict !== undefined) {
+    pending.set(change.evict, null);
+    queuedAt.delete(change.evict);
+  }
   if (change.action === "add")
     queuedAt.set(change.id, { queued: now(), observed: observedAt });
   else queuedAt.delete(change.id);

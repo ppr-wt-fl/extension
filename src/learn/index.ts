@@ -180,7 +180,7 @@ export class Learner {
     let total: Tensor[] | undefined;
     const bySite = new Map<string, Row[]>();
     for (const s of samples) {
-      bySite.set(s.site, [...(bySite.get(s.site) ?? []), s]);
+      (bySite.get(s.site) ?? bySite.set(s.site, []).get(s.site)!).push(s);
     }
 
     for (const group of bySite.values()) {

@@ -87,9 +87,7 @@ async function ensureOffscreenDocument(): Promise<void> {
  * */
 export async function observe(obs: Observation): Promise<void> {
   count(`sw.observations.${obs.source}`);
-  if (obs.req.type === "xmlhttprequest") {
-    // TODO: the features ignore xhr bodies, even for JS the page evals. Classify them as "script", or only keep them as data?
-  }
+  // TODO: the features ignore xhr bodies, even for JS the page evals. Classify them as "script", or only keep them as data?
   if (BODY_TYPES.has(obs.req.type) && obs.req.body === undefined) {
     // TODO: no body (non-GET, failed refetch, binary response). Infer with zeroed JS features, skip, or use a URL-only model?
     count(`sw.bodyMissing.${obs.req.type}`);

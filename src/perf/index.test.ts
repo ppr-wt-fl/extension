@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { flags } from '@/flags'
-import { decode, encode, record, setSink, type Sample } from '.'
+import { decode, encode, gauge, record, setSink, type Sample } from '.'
 
 afterEach(() => vi.useRealTimers())
 
@@ -47,4 +47,15 @@ test('without a sink, the buffer keeps the newest maxBuffer samples', async () =
   vi.runAllTimers()
   expect(got).toHaveLength(n)
   expect(got[0][1]).toBe(5)
+})
+
+test('gauge records only changes', () => {
+  vi.useFakeTimers()
+  const got: Sample[] = []
+  setSink((s) => got.push(...s))
+  gauge('g', 1)
+  gauge('g', 1)
+  gauge('g', 2)
+  vi.runAllTimers()
+  expect(got.map(([, value]) => value)).toEqual([1, 2])
 })

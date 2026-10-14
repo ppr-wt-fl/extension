@@ -6,6 +6,7 @@ import type { Source } from "@/collect";
 import { flags } from "@/flags";
 import { Learner } from "@/learn";
 import { inputSize, loadModel, THRESHOLD } from "@/model";
+import { logger } from "@/log";
 import { count, gauge, now, initSink, since } from "@/perf";
 import {
   decide,
@@ -57,6 +58,7 @@ const verdicts = new Map<string, Map<Source, boolean>>();
 const MAX_VERDICTS = 50_000;
 
 initSink("worker");
+const log = logger("worker");
 
 let learner: Learner | undefined;
 
@@ -108,6 +110,7 @@ const learnerPromise = (async () => {
   learner = new Learner(global, local);
   since("startup.learner", start);
   since("startup.total", startupStart);
+  log.info(`learner ready in ${(now() - startupStart).toFixed(0)}ms`);
   return learner;
 })();
 
@@ -158,8 +161,12 @@ self.onmessage = async ({
     }
 
     const block = decide(bySource);
+    log.trace(message.source, probability.toFixed(3), block ? "block" : "allow", message.request);
     count(block ? "decision.block" : "decision.allow");
-    if (before !== undefined && before !== block) count("decision.flips");
+    if (before !== undefined && before !== block) {
+      count("decision.flips");
+      log.debug(block ? "flip to block" : "flip to allow", message.request, Object.fromEntries(bySource));
+    }
     if (new Set(bySource.values()).size > 1) count("sources.disagree");
 
     // once per load: rule existed but request loaded (not installed yet / no match)
@@ -177,10 +184,12 @@ self.onmessage = async ({
       if (rule?.evict !== undefined) count("rules.evicted");
       if (rule?.action === "remove") count("rules.removed");
     } else if (block) {
+      log.trace("block verdict, but not blockable", message.request);
       count("block.notBlockable");
     }
     reply = { rule, repliedAt: now() };
   } catch (error) {
+    log.error(error);
     reply = { error: String(error) };
   }
   since("worker.handle", receivedAt);

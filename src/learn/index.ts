@@ -7,7 +7,10 @@ import {
 } from "@tensorflow/tfjs";
 import { flags } from "@/flags";
 import { gradient, inspectModes, predict, THRESHOLD } from "@/model";
+import { logger } from "@/log";
 import { count, now, record, since } from "@/perf";
+
+const log = logger("learn");
 
 export type LearnConfig = typeof flags.learn;
 
@@ -45,7 +48,7 @@ export type SendUpdate = (update: Float32Array) => void;
 const logUpdate: SendUpdate = (update) => {
   let squared = 0;
   for (const value of update) squared += value * value;
-  console.log(
+  log.info(
     `round update: ${update.length} weights, norm ${Math.sqrt(squared).toFixed(4)}`,
   );
 };
@@ -83,7 +86,7 @@ export class Learner {
     this.modes = inspectModes(local);
 
     if (this.modes.stateful) {
-      console.warn(
+      log.warn(
         "the model has non-trainable weights, the FL updates leave them out",
       );
     }
@@ -281,6 +284,9 @@ export class Learner {
 
     this.steps++;
     this.roundRows += samples.length;
+    log.debug(
+      `step ${this.steps}/${this.config.roundSteps}: ${queued.length} requests, ${fresh.length} + ${replayed.length} replayed rows, loss ${(loss / samples.length).toFixed(4)}`,
+    );
     since("learner.batch", batchStart);
     if (this.steps >= this.config.roundSteps) {
       this.endRound();
@@ -325,6 +331,11 @@ export class Learner {
       return false;
     }
     if (admitted >= this.config.perSiteLimit) {
+      // once per site and round
+      if (admitted === this.config.perSiteLimit) {
+        log.debug(`${sample.site} reached perSiteLimit, no more training rows this round`);
+        this.perSite.set(sample.site, admitted + 1);
+      }
       if (this.measureFl) count("fl.rejectedPerSite");
       return false;
     }
@@ -357,6 +368,7 @@ export class Learner {
       record("fl.updateBytes", data.byteLength);
     }
     // TODO(secret sharing): time share + upload (fl.shareMs, fl.uploadMs)
+    log.info(`round over: ${this.steps} steps, ${this.roundRows} rows, ${((now() - this.roundStart) / 1000).toFixed(1)}s`);
     this.sendUpdate(data);
     this.roundStart = now();
     this.roundRows = 0;

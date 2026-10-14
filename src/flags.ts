@@ -9,13 +9,15 @@ export const flags = {
    * Capture fetch/XHR responses by patching them in the page (src/content/patch.ts). Off: the script isn't injected and
    * the background drops captured_by_patch messages, which the page could still post.
    */
-  patchWebpageRequests: true,
+  patchWebpageRequests: false,
   /**
    * How the observations of one request (url, topLevelUrl, type) by different sources decide whether to block it:
    * - "canonical": the verdict on the body closest to what the page got (see `BODY_RANK` in src/collect)
    * - "any": block if any observation's verdict is block
    */
   reconcile: "canonical" as "canonical" | "any",
+  /** Lowest console level logged (src/log.ts). "trace": every observation, "debug": rule changes and flips. */
+  log: "info" as "trace" | "debug" | "info" | "warn" | "error" | "silent",
   /** On-device training of the local model (src/learn), FedAvg-style rounds. */
   learn: {
     /**

@@ -2,10 +2,14 @@ import { BODY_TYPES, observe, topLevelUrl, type Observation } from "../collect";
 import type { RelayMessage } from "../content/relay";
 import { flags } from "../flags";
 import { count, now, record, initSink, since } from "../perf";
+import { logger } from "@/log";
 import { captureWithDebugger } from "./debugger";
+
+const log = logger("sw");
 
 initSink("sw");
 count("sw.starts");
+log.debug("service worker started");
 // profile start (browser launch), not SW wake-ups
 chrome.runtime.onStartup.addListener(() => count("browser.starts"));
 
@@ -76,7 +80,10 @@ chrome.runtime.onMessage.addListener((message: RelayMessage, sender) => {
   }
 
   const isPatch = message.source === "captured_by_patch";
-  if (isPatch && !flags.patchWebpageRequests) return;
+  if (isPatch && !flags.patchWebpageRequests) {
+    log.trace("dropped captured_by_patch, flag off", message.url);
+    return;
+  }
   observe({
     source: message.source,
     req: {
@@ -95,7 +102,7 @@ chrome.runtime.onMessage.addListener((message: RelayMessage, sender) => {
     frameId: sender.frameId,
     method: isPatch ? message.method : undefined,
     timeStamp: Date.now(),
-  }).catch(console.error);
+  }).catch(log.error);
 });
 
 if (flags.debugger) captureWithDebugger();
@@ -120,6 +127,7 @@ async function refetch(url: string): Promise<string | undefined> {
   try {
     const response = await fetch(url, { credentials: "include" });
     if (!response.ok) {
+      log.debug("refetch failed", response.status, url);
       count("sw.refetchFailed");
       return undefined;
     }
@@ -128,7 +136,8 @@ async function refetch(url: string): Promise<string | undefined> {
     record("sw.refetchBytes", bytes.byteLength);
     since("sw.refetch", start);
     return new TextDecoder().decode(bytes);
-  } catch {
+  } catch (error) {
+    log.debug("refetch failed", error, url);
     count("sw.refetchFailed");
     return undefined;
   }

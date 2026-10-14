@@ -1,5 +1,8 @@
 import type { Source } from "@/collect";
 import { flags } from "@/flags";
+import { logger } from "@/log";
+
+const log = logger("rules");
 
 // The worker's decisions: which requests to block, and the block rules that need. Apart from worker.ts for tests.
 
@@ -48,6 +51,7 @@ export function ruleChange(key: string, block: boolean): RuleChange | undefined 
     if (rules.size >= MAX_RULES) {
       const [oldest, oldestId] = rules.entries().next().value!;
       rules.delete(oldest);
+      log.debug("rule limit reached, evicting", oldest);
       evict = oldestId;
     }
     const id = nextRuleId++;

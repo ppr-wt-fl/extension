@@ -1,4 +1,7 @@
 import { observe, topLevelUrl } from "../collect";
+import { logger } from "@/log";
+
+const log = logger("debugger");
 
 // Captures every response body of every tab through the Chrome DevTools Protocol. Enabled by `flags.debugger`.
 // TODO: attaching on navigation can miss the main document; out-of-process iframes are separate targets
@@ -47,8 +50,9 @@ async function attach(tabId: number) {
       frameTree: { frame: { id: string } };
     };
     attached.set(tabId, frameTree.frame.id);
-  } catch {
+  } catch (error) {
     // chrome:// pages, the web store, or already detached
+    log.debug("attach failed", tabId, error);
     attached.delete(tabId);
   }
 }
@@ -84,6 +88,7 @@ async function onEvent(source: chrome.debugger.Debuggee, method: string, params?
         if (!response.base64Encoded) body = response.body;
       } catch {
         // evicted from the DevTools buffer
+        log.trace("body evicted", request.url);
       }
     }
     await observe({
@@ -98,11 +103,12 @@ async function onEvent(source: chrome.debugger.Debuggee, method: string, params?
 
 export function captureWithDebugger() {
   chrome.debugger.onEvent.addListener((source, method, params) => {
-    onEvent(source, method, params).catch(console.error);
+    onEvent(source, method, params).catch(log.error);
   });
   chrome.debugger.onDetach.addListener(({ tabId }, reason) => {
     if (tabId === undefined) return;
     attached.delete(tabId);
+    log.debug("detached", tabId, reason);
     if (reason === "canceled_by_user") cancelled.add(tabId);
   });
   chrome.tabs.onUpdated.addListener((tabId, info) => {

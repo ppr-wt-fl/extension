@@ -1,4 +1,7 @@
 import { decode, encode, type OutboxRecord, type Sample } from ".";
+import { logger } from "@/log";
+
+const log = logger("perf");
 
 // Raw samples in IndexedDB until exported (popup). Shared by every extension-origin context, so each writes its own
 // flushes without messages. Separate from ./index: tests don't have IndexedDB.
@@ -31,15 +34,15 @@ function done(tx: IDBTransaction): Promise<void> {
 }
 
 /** Sink writing each flush as one record. `ctx`: where the samples were taken, e.g. "sw". */
-export function outboxSink(ctx: string): (samples: Sample[]) => void {
+export function outboxSink(context: string): (samples: Sample[]) => void {
   const instance = crypto.randomUUID().slice(0, 8);
 
   return (samples) => {
-    void (async () => {
+    (async () => {
       const tx = (await openIndexedDB()).transaction(STORE, "readwrite");
-      tx.objectStore(STORE).add(encode(samples, ctx, instance));
+      tx.objectStore(STORE).add(encode(samples, context, instance));
       await done(tx);
-    })().catch(console.error);
+    })().catch(log.error);
   };
 }
 

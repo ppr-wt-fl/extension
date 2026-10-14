@@ -14,7 +14,10 @@ import {
   type RequestInfo,
 } from "../features";
 import { flags } from "@/flags";
+import { logger } from "@/log";
 import { count, now, record, since } from "@/perf";
+
+const log = logger("collect");
 
 /**
  * How a request was observed:
@@ -79,6 +82,7 @@ async function ensureOffscreenDocument(): Promise<void> {
     // model load: startup.* in worker
     since("sw.offscreenCreate", start);
     count("offscreen.creations");
+    log.info("offscreen document created, restored rules:", restore.restore.length);
   })().finally(() => (creatingOffscreen = undefined));
   await creatingOffscreen;
 }
@@ -88,6 +92,7 @@ async function ensureOffscreenDocument(): Promise<void> {
  * */
 export async function observe(obs: Observation): Promise<void> {
   count(`sw.observations.${obs.source}`);
+  log.trace(obs.source, obs.req.type, obs.req.url, obs.req.body?.length);
   // TODO: the features ignore xhr bodies, even for JS the page evals. Classify them as "script", or only keep them as data?
   if (BODY_TYPES.has(obs.req.type) && obs.req.body === undefined) {
     // TODO: no body (non-GET, failed refetch, binary response). Infer with zeroed JS features, skip, or use a URL-only model?

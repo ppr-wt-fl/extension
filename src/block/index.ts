@@ -1,6 +1,9 @@
 import type { RequestInfo } from "@/features";
 import type { RuleChange } from "@/offscreen/rules";
+import { logger } from "@/log";
 import { now, since } from "@/perf";
+
+const log = logger("block");
 
 // Applies the block rules the offscreen worker decides on (src/offscreen/worker.ts), as dynamic rules: they survive
 // browser restarts, the worker's verdicts don't, so the worker gets the installed rules back with `installedRules`.
@@ -103,6 +106,7 @@ export function applyRule(
   setTimeout(() => {
     scheduled = false;
     const batch = [...pending];
+    log.debug("rule update", batch);
     const times = [...queuedAt.values()];
     pending.clear();
     queuedAt.clear();
@@ -121,6 +125,6 @@ export function applyRule(
           since("sw.timeToRule", observed);
         }
       })
-      .catch(console.error);
+      .catch(log.error);
   });
 }

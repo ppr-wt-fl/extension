@@ -8,7 +8,7 @@ import { decode, encode, type OutboxRecord, type Sample } from ".";
 const STORE = "outbox";
 let db: Promise<IDBDatabase> | undefined;
 
-function open(): Promise<IDBDatabase> {
+function openIndexedDB(): Promise<IDBDatabase> {
   db ??= new Promise((resolve, reject) => {
     const request = indexedDB.open("perf", 1);
     request.onupgradeneeded = () => {
@@ -33,9 +33,10 @@ function done(tx: IDBTransaction): Promise<void> {
 /** Sink writing each flush as one record. `ctx`: where the samples were taken, e.g. "sw". */
 export function outboxSink(ctx: string): (samples: Sample[]) => void {
   const instance = crypto.randomUUID().slice(0, 8);
+
   return (samples) => {
     void (async () => {
-      const tx = (await open()).transaction(STORE, "readwrite");
+      const tx = (await openIndexedDB()).transaction(STORE, "readwrite");
       tx.objectStore(STORE).add(encode(samples, ctx, instance));
       await done(tx);
     })().catch(console.error);
@@ -47,7 +48,7 @@ export async function exportOutbox(): Promise<{
   blob: Blob;
   lastKey?: IDBValidKey;
 }> {
-  const tx = (await open()).transaction(STORE);
+  const tx = (await openIndexedDB()).transaction(STORE);
   // one Blob per record: Chrome can keep Blob data off the JS heap, unlike millions of strings
   const parts: Blob[] = [];
   let lastKey: IDBValidKey | undefined;
@@ -73,13 +74,13 @@ export async function exportOutbox(): Promise<{
 
 /** Deletes up to and including `key`: what was exported, not what was written since. */
 export async function deleteUpTo(key: IDBValidKey): Promise<void> {
-  const tx = (await open()).transaction(STORE, "readwrite");
+  const tx = (await openIndexedDB()).transaction(STORE, "readwrite");
   tx.objectStore(STORE).delete(IDBKeyRange.upperBound(key));
   await done(tx);
 }
 
 export async function clearOutbox(): Promise<void> {
-  const tx = (await open()).transaction(STORE, "readwrite");
+  const tx = (await openIndexedDB()).transaction(STORE, "readwrite");
   tx.objectStore(STORE).clear();
   await done(tx);
 }
@@ -89,7 +90,7 @@ export async function outboxStats(): Promise<{
   records: number;
   bytes?: number;
 }> {
-  const tx = (await open()).transaction(STORE);
+  const tx = (await openIndexedDB()).transaction(STORE);
   const request = tx.objectStore(STORE).count();
   await done(tx);
   return {

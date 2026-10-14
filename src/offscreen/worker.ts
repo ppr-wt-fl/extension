@@ -6,8 +6,7 @@ import type { Source } from "@/collect";
 import { flags } from "@/flags";
 import { Learner } from "@/learn";
 import { inputSize, loadModel, THRESHOLD } from "@/model";
-import { count, gauge, now, setSink, since } from "@/perf";
-import { outboxSink } from "@/perf/outbox";
+import { count, gauge, now, initSink, since } from "@/perf";
 import {
   decide,
   restoreRules,
@@ -57,7 +56,7 @@ export type LearnerReply =
 const verdicts = new Map<string, Map<Source, boolean>>();
 const MAX_VERDICTS = 50_000;
 
-setSink(outboxSink("worker"), flags.perf.flushMs);
+initSink("worker");
 
 let learner: Learner | undefined;
 

@@ -1,11 +1,10 @@
 import { BODY_TYPES, observe, topLevelUrl, type Observation } from "../collect";
 import type { RelayMessage } from "../content/relay";
 import { flags } from "../flags";
-import { count, now, record, setSink, since } from "../perf";
-import { outboxSink } from "../perf/outbox";
+import { count, now, record, initSink, since } from "../perf";
 import { captureWithDebugger } from "./debugger";
 
-setSink(outboxSink("sw"), flags.perf.flushMs);
+initSink("sw");
 count("sw.starts");
 // profile start (browser launch), not SW wake-ups
 chrome.runtime.onStartup.addListener(() => count("browser.starts"));

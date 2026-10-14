@@ -1,8 +1,15 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { flags } from '@/flags'
-import { decode, encode, gauge, record, setSink, type Sample } from '.'
+import { decode, encode, gauge, initSink, record, type Sample } from '.'
 
-afterEach(() => vi.useRealTimers())
+// initSink writes to the outbox (IndexedDB); collect the samples here instead
+const got = vi.hoisted((): Sample[] => [])
+vi.mock('./outbox', () => ({ outboxSink: () => (s: Sample[]) => got.push(...s) }))
+
+afterEach(() => {
+  vi.useRealTimers()
+  got.length = 0
+})
 
 test('encode interns names, decode restores the samples', () => {
   const samples: Sample[] = [
@@ -24,9 +31,8 @@ test('encode interns names, decode restores the samples', () => {
 
 test('a sink gets the buffered samples after its delay', () => {
   vi.useFakeTimers()
-  const got: Sample[] = []
   record('x', 1)
-  setSink((s) => got.push(...s), 100)
+  initSink('test', 100)
   record('y', 2)
   expect(got).toEqual([])
   vi.advanceTimersByTime(100)
@@ -42,8 +48,7 @@ test('without a sink, the buffer keeps the newest maxBuffer samples', async () =
   vi.useFakeTimers()
   const n = flags.perf.maxBuffer
   for (let i = 0; i < n + 5; i++) perf.record('a', i)
-  const got: Sample[] = []
-  perf.setSink((s) => got.push(...s))
+  perf.initSink('test')
   vi.runAllTimers()
   expect(got).toHaveLength(n)
   expect(got[0][1]).toBe(5)
@@ -51,8 +56,7 @@ test('without a sink, the buffer keeps the newest maxBuffer samples', async () =
 
 test('gauge records only changes', () => {
   vi.useFakeTimers()
-  const got: Sample[] = []
-  setSink((s) => got.push(...s))
+  initSink('test')
   gauge('g', 1)
   gauge('g', 1)
   gauge('g', 2)

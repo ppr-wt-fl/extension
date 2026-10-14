@@ -1,11 +1,15 @@
 import { readFileSync } from 'node:fs'
 import { io, memory, setBackend } from '@tensorflow/tfjs'
 import '@tensorflow/tfjs-backend-wasm'
-import { beforeAll, expect, test } from 'vitest'
+import { beforeAll, expect, test, vi } from 'vitest'
 import { flags } from '@/flags'
 import { loadModel, predict, THRESHOLD } from '@/model'
-import { setSink, type Sample } from '@/perf'
+import { initSink, type Sample } from '@/perf'
 import { Learner, Reservoir, type LearnConfig } from '.'
+
+// initSink writes to the outbox (IndexedDB); collect the samples here instead
+const samples = vi.hoisted((): Sample[] => [])
+vi.mock('@/perf/outbox', () => ({ outboxSink: () => (s: Sample[]) => samples.push(...s) }))
 
 // FIXME: use the copy of the model in this repo once it's there (see src/collect/index.ts)
 const dir = new URL(
@@ -137,8 +141,7 @@ test('frees its tensors, also with the training metrics', async () => {
 })
 
 test('records the training metrics only with measureFl', async () => {
-  const samples: Sample[] = []
-  setSink((s) => samples.push(...s))
+  initSink('test', 0)
   const names = async () => {
     await new Promise((r) => setTimeout(r))
     return new Set(samples.splice(0).map(([name]) => name))

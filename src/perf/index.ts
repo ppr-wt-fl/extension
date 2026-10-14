@@ -1,4 +1,5 @@
 import { flags } from "@/flags";
+import { outboxSink } from "../perf/outbox";
 
 // Perf metrics. Every context buffers samples -> sink, which writes them raw to IndexedDB (./outbox); analysed offline.
 // Prefix = where taken: sw, hop, worker/learner, block/rules/decision/sources, page, startup, fl.
@@ -19,8 +20,8 @@ let scheduled = false;
 
 // FIXME: not a huge fan of this sink setup
 /** Where samples go, after `delay` ms. Unset: buffered (tests), up to flags.perf.maxBuffer. */
-export function setSink(fn: (samples: Sample[]) => void, delay = 0) {
-  sink = fn;
+export function initSink(name: string, delay = flags.perf.flushMs) {
+  sink = outboxSink(name);
   delayMs = delay;
   schedule();
 }
@@ -107,6 +108,12 @@ export function encode(
 export function* decode(record: OutboxRecord) {
   const { ctx, instance, t0, names, ids, values, dt } = record;
   for (let i = 0; i < ids.length; i++) {
-    yield { t: t0 + dt[i], ctx, instance, name: names[ids[i]], value: values[i] };
+    yield {
+      t: t0 + dt[i],
+      ctx,
+      instance,
+      name: names[ids[i]],
+      value: values[i],
+    };
   }
 }

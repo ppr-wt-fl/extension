@@ -11,12 +11,12 @@ async function load() {
   } as Record<string, number | undefined>
 }
 
-/** Downloads the outbox as NDJSON, returns the last exported key. */
+/** Downloads the outbox as gzipped NDJSON, returns the last exported key. */
 async function download() {
   const { blob, lastKey } = await exportOutbox()
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
-  a.download = `perf-${new Date().toISOString()}.ndjson`
+  a.download = `perf-${new Date().toISOString()}.ndjson.gz`
   a.click()
   URL.revokeObjectURL(a.href)
   return lastKey

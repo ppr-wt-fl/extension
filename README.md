@@ -170,7 +170,7 @@ scripts and pages can be compared by writing its fixture elsewhere and running w
 Behind `flags.perf` (`src/flags.ts`). Every context records samples with `record`/`since`/`count` (`src/perf`) and
 every `flushMs` writes them raw, with timestamps, to IndexedDB (`perf`/`outbox`, `src/perf/outbox.ts`): one record
 per flush, names interned per record. The service worker and the offscreen worker write their own, content scripts
-message the service worker. The popup exports the outbox as NDJSON (`{t, ctx, instance, name, value}` per line) and
+message the service worker. The popup exports the outbox as gzipped NDJSON (`.ndjson.gz`, `{t, ctx, instance, name, value}` per line) and
 clears it; aggregation (percentiles etc.) happens offline. Upload to a server is a TODO in `src/perf/outbox.ts`.
 
 - Latency: `sw.timeToRule` (request completed until its block rule is active, the request's repeats load until

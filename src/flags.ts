@@ -65,6 +65,6 @@ export const flags = {
     /** Samples a context buffers while it has no sink, oldest dropped. */
     maxBuffer: 10_000,
     /** Every context's buffer time before writing it to IndexedDB. */
-    flushMs: 1000,
+    flushMs: 5000,
   },
 };

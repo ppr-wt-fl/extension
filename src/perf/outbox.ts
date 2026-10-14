@@ -46,7 +46,7 @@ export function outboxSink(context: string): (samples: Sample[]) => void {
   };
 }
 
-/** NDJSON of every sample, and the last key in it for `deleteUpTo`. */
+/** Gzipped NDJSON of every sample, and the last key in it for `deleteUpTo`. */
 export async function exportOutbox(): Promise<{
   blob: Blob;
   lastKey?: IDBValidKey;
@@ -69,8 +69,9 @@ export async function exportOutbox(): Promise<{
     };
     request.onerror = () => reject(request.error);
   });
+  const gzip = new Blob(parts).stream().pipeThrough(new CompressionStream("gzip"));
   return {
-    blob: new Blob(parts, { type: "application/x-ndjson" }),
+    blob: await new Response(gzip).blob(),
     lastKey,
   };
 }

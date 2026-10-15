@@ -28,3 +28,6 @@ chrome.runtime.onMessage.addListener(
     return true;
   },
 );
+
+// the service worker waits for this before its first request (src/collect ensureOffscreenDocument)
+void chrome.runtime.sendMessage({ offscreenReady: true });

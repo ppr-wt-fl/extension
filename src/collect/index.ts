@@ -63,7 +63,7 @@ let creatingOffscreen: Promise<void> | undefined;
  */
 let restored = false;
 /** Creates the offscreen document holding the learner (src/offscreen) unless it exists, and gives it the installed rules. */
-async function ensureOffscreenDocument(): Promise<void> {
+async function ensureOffscreenDocument(timeout = 3_000): Promise<void> {
   const contexts = await chrome.runtime.getContexts({
     contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
   });
@@ -73,11 +73,27 @@ async function ensureOffscreenDocument(): Promise<void> {
   creatingOffscreen ??= (async () => {
     const start = now();
     if (contexts.length === 0) {
+      // createDocument can resolve before the document listens (in dev it imports its script after load), so wait for it
+      const ready = new Promise<void>((resolve, reject) => {
+        const timeoutId = setTimeout(reject, timeout);
+
+        function onReady(message: any) {
+          if (message?.offscreenReady !== true) return;
+          clearTimeout(timeoutId);
+          chrome.runtime.onMessage.removeListener(onReady);
+          resolve();
+        }
+
+        chrome.runtime.onMessage.addListener(onReady);
+      });
+
       await chrome.offscreen.createDocument({
         url: "src/offscreen/index.html",
         reasons: [chrome.offscreen.Reason.WORKERS],
-        justification: "Runs the ad blocking model and its training in a worker",
+        justification:
+          "Runs the ad blocking model and its training in a worker",
       });
+      await ready;
     }
 
     const restore: RestoreRequest = {
@@ -130,6 +146,7 @@ export async function observe(obs: Observation): Promise<void> {
     label: await trainingLabel(obs),
     sentAt: now(),
   };
+
   const reply: LearnerReply = await chrome.runtime.sendMessage(request);
   if ("error" in reply) throw new Error(reply.error);
   if (reply.repliedAt !== undefined) since("hop.workerToSw", reply.repliedAt);

@@ -51,6 +51,11 @@ features/                Rust feature extraction
   presets/               feature lists of models, in model order
   tests/                 reference.py (original Python code) and compare.test.ts (Rust vs Python, via the wasm)
   pkg/                   wasm-bindgen output, generated
+src/lib/lists/           loads the filter lists engine for comparing verdicts (flags.lists)
+filterlists/             EasyList + EasyPrivacy matching with adblock-rust, compiled to wasm
+  data/                  list snapshots (2026-10-15)
+  src/bin/compile.rs     serializes each list's engine at build time: data/<name>.txt -> pkg/<name>.dat
+  pkg/                   wasm-bindgen output and the engines, generated (bun run build:filterlists)
 ```
 
 ## Capturing requests
@@ -182,10 +187,38 @@ clears it; aggregation (percentiles etc.) happens offline. Upload to a server is
   `fl.rejected*`, `fl.roundMs`, `fl.roundRows`, `fl.updateBytes`, `fl.disagreement` (local vs global verdicts, a
   second forward pass). Secret sharing metrics are TODOs at `SendUpdate` in `src/lib/learn`.
 
+- Filter lists (`flags.lists`): `filter-lists.<model>.<lists>.<type>` per classified request (`block`/`allow` each, a
+  confusion matrix against any list), `filter-lists.<list>.<model>.<type>` when that list blocks, `filter-lists.match`,
+  `startup.lists`. Only requests the model classifies
+  are compared: cache hits and requests a rule blocked aren't.
+
 ```sh
 bun run build
 bun run bench -- --runs 10 --warmup 2 --cpu 4 http://localhost:8000/page.html   # CHROME=... for another binary
 ```
+
+## Filter lists
+
+```ts
+const check = await loadLists(); // src/lib/lists
+check({ url, topLevelUrl, type }); // ["easyprivacy"]: the lists that block it, [] if none
+```
+
+Every `filterlists/data/<name>.txt` becomes a list named `<name>`, with its own engine, so a list's exceptions don't
+apply to the others. Network filters only, matched in the offscreen worker with [adblock-rust](https://github.com/brave/adblock-rust)
+(`filterlists/`). Compared on the 488,810 requests of `robustness-evaluation/dataset/features_raw.csv` in node 
+(V8, network filters only, warm):
+
+|                          | adblock-rust (wasm, deserialized) | adblock-rust (wasm, parsed from text) | @ghostery/adblocker 2.20.1 |
+| ------------------------ | --------------------------------- | ------------------------------------- | -------------------------- |
+| load                     | 13 ms wasm + 35 ms deserialize    | 158 ms                                | 9 ms deserialize           |
+| first match (lazy init)  | 32 ms                             |                                       | 5 ms                       |
+| match mean / p50 / p99   | 13.6 / 11 / 50 µs                 |                                       | 32.8 / 10 / 60 µs          |
+| match max                | 6 ms                              |                                       | 190 ms (data: URLs)        |
+| shipped                  | 2.5 MB wasm + 4.9 MB engine       |                                       | 130 kB JS + 4.3 MB engine  |
+
+The worker outlives the service worker, so matching cost matters more than load. Both engines agree on 99.87% of
+the requests; the rest is mostly Firefox's `beacon` type, which Chrome calls `ping`.
 
 ## TODO
 

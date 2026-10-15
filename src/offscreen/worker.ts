@@ -4,7 +4,9 @@ import tfWasmUrl from "@tensorflow/tfjs-backend-wasm/dist/tfjs-backend-wasm.wasm
 import tfSimdUrl from "@tensorflow/tfjs-backend-wasm/dist/tfjs-backend-wasm-simd.wasm?url";
 import type { Source } from "@/lib/collect";
 import { flags } from "@/lib/flags";
+import type { RequestInfo } from "@/lib/features";
 import { Learner } from "@/lib/learn";
+import { loadLists } from "@/lib/lists";
 import { inputSize, loadModel, THRESHOLD } from "@/model";
 import { logger } from "@/lib/log";
 import { count, gauge, now, initSink, since } from "@/lib/perf";
@@ -25,6 +27,8 @@ export interface LearnerRequest {
   /** Whether the request can get a block rule, `blockable` in src/lib/block */
   blockable: boolean;
   source: Source;
+  /** For the filter lists' verdict (src/lib/lists) */
+  req: Omit<RequestInfo, "body" | "acornAsts">;
   features: number[];
   /** Top-level site of the request */
   site: string;
@@ -65,6 +69,14 @@ if (flags.perf.enabled) {
       gauge(`learner.${k}`, v);
   }, flags.perf.flushMs);
 }
+
+// failing lists only lose the comparison, not the verdicts
+const checkLists =
+  flags.lists && flags.perf.enabled
+    ? loadLists().catch(
+        (error) => void log.error("filter lists failed to load", error),
+      )
+    : undefined;
 
 const learnerPromise = (async () => {
   const startupStart = now();
@@ -144,6 +156,27 @@ self.onmessage = async ({
       message.request,
     );
     count(block ? "decision.block" : "decision.allow");
+
+    const check = await checkLists;
+    if (check) {
+      const start = now();
+      const blockedBy = check(message.req);
+      since("filter-lists.match", start);
+      const modelResponse = block ? "block" : "allow";
+      const filterListResponse = blockedBy.length > 0 ? "block" : "allow";
+
+      // confusion matrix per type, any list: filter-lists.<model>.<lists>.<type>
+      count(`filter-lists.${modelResponse}.${filterListResponse}.${message.req.type}`);
+
+      // per list: filter-lists.<list>.<model>.<type> when it blocks; it allowed the rest of filter-lists.<model>.*.<type>
+      for (const name of blockedBy) {
+        count(`filter-lists.${name}.${modelResponse}.${message.req.type}`);
+      }
+
+      if (block !== blockedBy.length > 0) {
+        log.trace("lists disagree, blocked by:", blockedBy, message.request);
+      }
+    }
 
     // once per load: rule existed but request loaded (not installed yet / no match)
     if (rules.has(message.request)) count("block.loadedDespiteRule");

@@ -169,7 +169,11 @@ export async function observe(obs: Observation): Promise<boolean> {
     restored = false;
     throw error;
   }
-  if ("error" in reply) throw new Error(reply.error);
+  if ("error" in reply) {
+    // the worker died and the document closed itself; other errors leave it usable
+    if (reply.closing) restored = false;
+    throw new Error(reply.error);
+  }
   if (reply.repliedAt !== undefined) since("hop.workerToSw", reply.repliedAt);
   since("sw.timeToVerdict", obs.timeStamp);
 

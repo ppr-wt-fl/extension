@@ -50,7 +50,8 @@ export type OffscreenRequest = LearnerRequest | RestoreRequest;
 /** `block`: the request's verdict. `rule` is set when its decision changed. `repliedAt`: `now()`, for hop.* */
 export type LearnerReply =
   | { block?: boolean; rule?: RuleChange; repliedAt?: number }
-  | { error: string };
+  // `closing`: the worker died and the offscreen document is closing, the next request needs a new one
+  | { error: string; closing?: true };
 
 initSink("worker");
 const log = logger("worker");
@@ -60,13 +61,18 @@ let learner: Learner | undefined;
 // Gauges: current sizes, as a sample when they change
 if (flags.perf.enabled) {
   setInterval(() => {
-    const tf = memory();
-    gauge("rules", rules.size);
-    // growing = leak
-    gauge("tf.numTensors", tf.numTensors);
-    gauge("tf.numBytes", tf.numBytes);
-    for (const [k, v] of Object.entries(learner?.sizes() ?? {}))
-      gauge(`learner.${k}`, v);
+    // an uncaught error here reaches the document's worker.onerror, which closes it
+    try {
+      const tf = memory();
+      gauge("rules", rules.size);
+      // growing = leak
+      gauge("tf.numTensors", tf.numTensors);
+      gauge("tf.numBytes", tf.numBytes);
+      for (const [k, v] of Object.entries(learner?.sizes() ?? {}))
+        gauge(`learner.${k}`, v);
+    } catch (error) {
+      log.error("gauges failed", error);
+    }
   }, flags.perf.flushMs);
 }
 

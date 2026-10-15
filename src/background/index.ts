@@ -13,49 +13,53 @@ log.debug("service worker started");
 // profile start (browser launch), not SW wake-ups
 chrome.runtime.onStartup.addListener(() => count("browser.starts"));
 
-chrome.webRequest.onCompleted.addListener(
-  (details) => void onCompleted(details).catch(log.error),
-  { urls: ["<all_urls>"] },
-);
+chrome.webRequest.onCompleted.addListener(onCompleted, {
+  urls: ["<all_urls>"],
+});
 
 async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
-  since("sw.eventDelay", details.timeStamp);
-  // Requests outside tabs have no top-level page.
-  // These include the refetches below, and page service workers' requests.
-  if (details.tabId < 0) return;
+  try {
+    since("sw.eventDelay", details.timeStamp);
+    // Requests outside tabs have no top-level page.
+    // These include the refetches below, and page service workers' requests.
+    if (details.tabId < 0) return;
 
-  // block.hits / (block.hits + this) = share of tab requests blocked
-  // NOTE: should we really make sure it comes from a user tab? blocking other stuff is valid usage I would guess
-  count("sw.requestsCompleted");
+    // block.hits / (block.hits + this) = share of tab requests blocked
+    // NOTE: should we really make sure it comes from a user tab? blocking other stuff is valid usage I would guess
+    count("sw.requestsCompleted");
 
-  // FIXME: MAYBE THIS CAN BE DONE IN A BETTER WAY
-  const start = now();
-  const top =
-    details.type === "main_frame"
-      ? details.url
-      : await topLevelUrl(details.tabId);
-  if (details.type !== "main_frame") since("sw.topLevelUrl", start);
-  if (!top) return;
+    // FIXME: MAYBE THIS CAN BE DONE IN A BETTER WAY
+    const start = now();
+    const top =
+      details.type === "main_frame"
+        ? details.url
+        : await topLevelUrl(details.tabId);
+    if (details.type !== "main_frame") since("sw.topLevelUrl", start);
+    if (!top) return;
 
-  const observation: Observation = {
-    source: "webRequest",
-    req: { url: details.url, topLevelUrl: top, type: details.type },
-    tabId: details.tabId,
-    frameId: details.frameId,
-    method: details.method,
-    timeStamp: details.timeStamp,
-  };
+    const observation: Observation = {
+      source: "webRequest",
+      req: { url: details.url, topLevelUrl: top, type: details.type },
+      tabId: details.tabId,
+      frameId: details.frameId,
+      method: details.method,
+      timeStamp: details.timeStamp,
+    };
 
-  if (!BODY_TYPES.has(details.type)) return observe(observation);
-  // Only GET is safe to repeat
-  const body =
-    details.method === "GET" ? await refetch(details.url) : undefined;
+    if (!BODY_TYPES.has(details.type)) return observe(observation);
+    // Only GET is safe to repeat
+    const body =
+      details.method === "GET" ? await refetch(details.url) : undefined;
 
-  return observe({
-    ...observation,
-    source: "refetch",
-    req: { ...observation.req, body },
-  });
+    return observe({
+      ...observation,
+      source: "refetch",
+      req: { ...observation.req, body },
+    });
+  } catch (error) {
+    log.error("chrome.webRequest.onCompleted listener failed");
+    log.error(error);
+  }
 }
 
 chrome.runtime.onMessage.addListener((message: RelayMessage, sender) => {

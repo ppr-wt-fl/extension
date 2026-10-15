@@ -80,8 +80,7 @@ async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
     const entry = checked.get(ruleKeyHash);
     // Recently checked
     if (tier === "fresh") {
-      // mark as recently used
-      return checked.put(ruleKeyHash, entry!);
+      return checked.touch(ruleKeyHash);
     }
 
     // Mark this request as pending -> if the same one comes again it will be skipped

@@ -63,6 +63,14 @@ export function put(key: number, entry: Entry): void {
   saveSoon();
 }
 
+/** Marks an entry as the most recently used. Doesn't save: losing the order on a restart only changes what's evicted. */
+export function touch(key: number): void {
+  const entry = entries.get(key);
+  if (!entry) return;
+  entries.delete(key);
+  entries.set(key, entry);
+}
+
 export function drop(key: number): void {
   if (entries.delete(key)) saveSoon();
 }

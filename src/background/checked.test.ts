@@ -40,7 +40,7 @@ test("tier: fresh, then validate for bodies, then full past maxAgeMs", async () 
   expect(c.tier(key, true, t)).toBe("inflight");
 });
 
-test("put evicts the least recently used past maxEntries", async () => {
+test("put evicts the least recently used past maxEntries, touch counts as a use", async () => {
   const c = await import("./checked");
   // the module's own flags, a new instance since resetModules
   const { flags } = await import("@/flags");
@@ -49,7 +49,7 @@ test("put evicts the least recently used past maxEntries", async () => {
   try {
     c.put(1, entry(c.nowS()));
     c.put(2, entry(c.nowS()));
-    c.put(1, entry(c.nowS()));
+    c.touch(1);
     c.put(3, entry(c.nowS()));
     expect([c.get(1), c.get(2), c.get(3)].map(Boolean)).toEqual([
       true,

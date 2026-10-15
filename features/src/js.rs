@@ -26,7 +26,7 @@ pub struct JsFeatures {
 
 struct Script {
     features: JsFeatures,
-    ngram_counts: HashMap<String, f64>,
+    ngram_counts: HashMap<(u32, u32, u32), f64>,
     ngram_len: usize,
 }
 
@@ -91,7 +91,7 @@ pub fn js_features(source: &str, acorn_ast: Option<&str>) -> JsFeatures {
     features.ngrams = script
         .ngram_counts
         .into_iter()
-        .map(|(k, c)| (k, c / script.ngram_len as f64))
+        .map(|((a, b, c), n)| (format!("ng_{a}_{b}_{c}"), n / script.ngram_len as f64))
         .collect();
     features
 }
@@ -101,7 +101,7 @@ pub fn js_features(source: &str, acorn_ast: Option<&str>) -> JsFeatures {
 pub fn html_features(html: &str, acorn_asts: Option<&[String]>) -> JsFeatures {
     let html = normalize_newlines(html);
     let mut features = JsFeatures::default();
-    let mut ngram_counts: HashMap<String, f64> = HashMap::new();
+    let mut ngram_counts: HashMap<(u32, u32, u32), f64> = HashMap::new();
     let mut total_ngram_len = 0;
     for (i, source) in inline_scripts(&html).into_iter().enumerate() {
         let acorn_ast = acorn_asts.map(|asts| asts.get(i).map(String::as_str).unwrap_or(""));
@@ -123,14 +123,18 @@ pub fn html_features(html: &str, acorn_asts: Option<&[String]>) -> JsFeatures {
     }
     features.ngrams = ngram_counts
         .into_iter()
-        .map(|(k, c)| (k, c / total_ngram_len as f64))
+        .map(|((a, b, c), n)| (format!("ng_{a}_{b}_{c}"), n / total_ngram_len as f64))
         .collect();
     features
 }
 
 // Python reads files with universal newlines
-fn normalize_newlines(text: &str) -> String {
-    text.replace("\r\n", "\n").replace('\r', "\n")
+fn normalize_newlines(text: &str) -> Cow<'_, str> {
+    if text.contains('\r') {
+        Cow::Owned(text.replace("\r\n", "\n").replace('\r', "\n"))
+    } else {
+        Cow::Borrowed(text)
+    }
 }
 
 /// Non-empty <script> bodies, like BeautifulSoup's html.parser. Newlines must already be "\n".
@@ -161,14 +165,12 @@ fn script_features(source: &str, acorn_ast: Option<&str>) -> Option<Script> {
     for t in &types {
         tokens.push(*token_dict.get(t.as_ref())?);
     }
-    let mut ngram_counts: HashMap<String, f64> = HashMap::new();
+    let mut ngram_counts: HashMap<(u32, u32, u32), f64> = HashMap::new();
     let mut ngram_len = 0;
     if tokens.len() >= 3 {
         ngram_len = tokens.len() - 2;
         for w in tokens.windows(3) {
-            *ngram_counts
-                .entry(format!("ng_{}_{}_{}", w[0], w[1], w[2]))
-                .or_default() += 1.0;
+            *ngram_counts.entry((w[0], w[1], w[2])).or_default() += 1.0;
         }
     }
 
@@ -213,12 +215,20 @@ fn ngram_token_dict() -> &'static HashMap<String, u32> {
 }
 
 fn oxc_ast(source: &str) -> String {
-    let allocator = Allocator::default();
+    // wasm is single-threaded; reusing the arena avoids reallocating its chunks per script
+    thread_local!(static ALLOCATOR: std::cell::RefCell<Allocator> = Default::default());
+    ALLOCATOR.with_borrow_mut(|allocator| {
+        allocator.reset();
+        oxc_ast_in(allocator, source)
+    })
+}
+
+fn oxc_ast_in(allocator: &Allocator, source: &str) -> String {
     let options = ParseOptions {
         preserve_parens: false,
         ..ParseOptions::default()
     };
-    let parsed = Parser::new(&allocator, source, SourceType::script())
+    let parsed = Parser::new(allocator, source, SourceType::script())
         .with_options(options)
         .parse();
     parsed.program.to_estree_json(false, false)

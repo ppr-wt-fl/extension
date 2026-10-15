@@ -41,9 +41,42 @@ export function blockable(req: RequestInfo): boolean {
     req.type !== "main_frame" &&
     !isOwnUrl(req.url) &&
     new URL(req.topLevelUrl).hostname !== "" &&
-    /^[\x21-\x7e]+$/.test(req.url) &&
-    !/[*^|]/.test(req.url)
+    literalUrlFilter(req.url)
   );
+}
+
+/** Whether `|url|` as a urlFilter matches exactly that URL, see `blockable`. */
+export function literalUrlFilter(url: string): boolean {
+  return /^[\x21-\x7e]+$/.test(url) && !/[*^|]/.test(url);
+}
+
+/**
+ * Session rule that sets the Referer on our own refetch of `url` (src/background), which fetch can't set cross-origin.
+ * Servers, ad servers especially, can answer differently without the Referer the page sent.
+ */
+export function refererRule(id: number, url: string, referer: string): Rule {
+  return {
+    id,
+    priority: 1,
+    action: {
+      type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
+      requestHeaders: [
+        {
+          header: "referer",
+          operation: chrome.declarativeNetRequest.HeaderOperation.SET,
+          value: referer,
+        },
+      ],
+    },
+    condition: {
+      urlFilter: `|${url}|`,
+      isUrlFilterCaseSensitive: true,
+      // requests of the extension itself: no tab, initiated by our origin
+      tabIds: [-1],
+      initiatorDomains: [chrome.runtime.id],
+      resourceTypes: [chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST],
+    },
+  };
 }
 
 export function rule(id: number, req: RequestInfo): Rule {

@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { applyRule, blockable, installedRules, rule, ruleKey, siteDisabled } from '.'
+import { applyRule, blockable, installedRules, refererRule, rule, ruleKey, siteDisabled } from '.'
 
 const runtime = { getURL: (path: string) => `chrome-extension://ours/${path}` }
 afterEach(() => vi.unstubAllGlobals())
@@ -121,4 +121,18 @@ test('removeAllRules drops queued changes and removes every block rule, not the 
     { removeRuleIds: [1], addRules: [rule(1, req)] },
     { removeRuleIds: [1, 4] },
   ])
+})
+
+test('refererRule only matches our own refetch of the URL', () => {
+  vi.stubGlobal('chrome', {
+    runtime: { ...runtime, id: 'ours' },
+    declarativeNetRequest: {
+      RuleActionType: { MODIFY_HEADERS: 'modifyHeaders' },
+      HeaderOperation: { SET: 'set' },
+      ResourceType: { XMLHTTPREQUEST: 'xmlhttprequest' },
+    },
+  })
+  const r = refererRule(3, req.url, 'https://news.example/')
+  expect(r.action.requestHeaders).toEqual([{ header: 'referer', operation: 'set', value: 'https://news.example/' }])
+  expect(r.condition).toMatchObject({ urlFilter: `|${req.url}|`, tabIds: [-1], initiatorDomains: ['ours'] })
 })

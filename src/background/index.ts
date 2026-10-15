@@ -6,10 +6,11 @@ import {
   type Observation,
 } from "@/lib/collect";
 import { flags } from "@/lib/flags";
-import { count, now, record, initSink, since } from "@/lib/perf";
+import { count, now, initSink, since } from "@/lib/perf";
 import { removeAllRules, ruleKey } from "@/lib/block";
 import { logger } from "@/lib/log";
 import * as checked from "./checked";
+import { refetch } from "./refetch";
 
 const log = logger("sw");
 
@@ -70,7 +71,7 @@ async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
     const hasBody = BODY_TYPES.has(details.type) && details.method === "GET";
 
     if (!flags.cache.enabled) {
-      const body = hasBody ? await refetch(details.url) : undefined;
+      const body = hasBody ? await refetch(details.url, details.initiator) : undefined;
       return await classify(body);
     }
 
@@ -110,7 +111,7 @@ async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
       }
 
       // Refetch the body, the model needs it anyway. Same hash as when classified: unchanged, skip the model
-      const bodyBytes = hasBody ? await refetch(details.url) : undefined;
+      const bodyBytes = hasBody ? await refetch(details.url, details.initiator) : undefined;
 
       // a failed refetch never matches, so the next load refetches again
       const bodyHash = bodyBytes ? await checked.hash30(bodyBytes) : 0;
@@ -170,29 +171,4 @@ if (flags.perf.enabled) {
       if (request.tabId >= 0) count("block.hits");
     },
   );
-}
-
-/**
- * Downloads a URL again, for the body webRequest doesn't expose. It can differ from what the page got: this request
- * has another cache partition, Referer and, depending on SameSite, cookies.
- */
-async function refetch(url: string): Promise<ArrayBuffer | undefined> {
-  const start = now();
-  try {
-    const response = await fetch(url, { credentials: "include" });
-    if (!response.ok) {
-      log.debug("refetch failed", response.status, url);
-      count("sw.refetchFailed");
-      return undefined;
-    }
-    // decompressed: upper bound of extra traffic
-    const bytes = await response.arrayBuffer();
-    record("sw.refetchBytes", bytes.byteLength);
-    since("sw.refetch", start);
-    return bytes;
-  } catch (error) {
-    log.debug("refetch failed", error, url);
-    count("sw.refetchFailed");
-    return undefined;
-  }
 }

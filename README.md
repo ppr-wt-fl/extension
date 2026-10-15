@@ -67,7 +67,7 @@ which classifies it with the next batch and trains on it if it has a label:
 | Source                                                                                                         | Where                     | Covers                                  | Body                                                    |
 | -------------------------------------------------------------------------------------------------------------- | ------------------------- | --------------------------------------- | ------------------------------------------------------- |
 | `webRequest`                                                                                                   | `src/background/index.ts` | every request from a tab                | none, for types whose features don't read it            |
-| `refetch`                                                                                                      | `src/background/index.ts` | GET `script`, `sub_frame`, `main_frame` | downloaded again; cache, cookies and Referer can differ |
+| `refetch`                                                                                                      | `src/background/refetch.ts` | GET `script`, `sub_frame`, `main_frame` | downloaded again; cache and cookies can differ, Referer is the initiator origin |
 | Only sources a page can't forge are used. Page-side capture (a fetch/XHR patch, the frames' `outerHTML`) was   |
 | removed: any script on the page can tamper with it. `chrome.debugger` was removed too: it needs the `debugger` |
 | permission and shows a banner on every tab.                                                                    |

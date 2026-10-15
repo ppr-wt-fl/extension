@@ -25,14 +25,21 @@ export function ruleKey(req: RequestInfo): string {
   return key(req.url, new URL(req.topLevelUrl).hostname, req.type);
 }
 
+/** Whether a URL is one of our own extension's files, e.g. the content script's chunks the page loads. */
+export function isOwnUrl(url: string): boolean {
+  return url.startsWith(chrome.runtime.getURL(""));
+}
+
 /**
- * Whether a request can get a block rule. Not main_frame: that blocks the page itself. Not without a site
- * (file:, about:). Not a URL with *, ^ or |, which urlFilter can't match literally, or with non-ASCII or whitespace,
- * which makes the rule invalid and so its whole batch fail.
+ * Whether a request can get a block rule. Not main_frame: that blocks the page itself. Not our own files: no ad, and
+ * DNR never matches chrome-extension: URLs anyway. Not without a site (file:, about:). Not a URL with *, ^ or |, which
+ * urlFilter can't match literally, or with non-ASCII or whitespace, which makes the rule invalid and so its whole batch
+ * fail.
  */
 export function blockable(req: RequestInfo): boolean {
   return (
     req.type !== "main_frame" &&
+    !isOwnUrl(req.url) &&
     new URL(req.topLevelUrl).hostname !== "" &&
     /^[\x21-\x7e]+$/.test(req.url) &&
     !/[*^|]/.test(req.url)
@@ -54,9 +61,18 @@ export function rule(id: number, req: RequestInfo): Rule {
   };
 }
 
-/** Installed rules by key, for the worker to continue from. Inverse of `rule`. */
+/**
+ * Installed rules by key, for the worker to continue from. Inverse of `rule`. Removes rules of our own files, which
+ * older versions installed: they never match and only take up rule slots.
+ */
 export async function installedRules(): Promise<{ key: string; id: number }[]> {
-  return (await chrome.declarativeNetRequest.getDynamicRules()).flatMap(
+  const all = await chrome.declarativeNetRequest.getDynamicRules();
+  const bad = all.filter((r) => isOwnUrl(r.condition.urlFilter?.slice(1) ?? ""));
+  if (bad.length) {
+    log.info("removing rules of own files:", bad.length);
+    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: bad.map((r) => r.id) });
+  }
+  return all.filter((r) => !bad.includes(r)).flatMap(
     ({ id, condition: { urlFilter, initiatorDomains, resourceTypes } }) =>
       urlFilter && initiatorDomains?.length && resourceTypes?.length
         ? [

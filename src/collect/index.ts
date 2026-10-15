@@ -1,4 +1,4 @@
-import { applyRule, blockable, installedRules, ruleKey } from "@/block";
+import { applyRule, blockable, installedRules, isOwnUrl, ruleKey } from "@/block";
 import { label } from "@/label";
 import type {
   LearnerReply,
@@ -120,6 +120,8 @@ async function ensureOffscreenDocument(timeout = 3_000): Promise<void> {
  * Computes features on callers thread
  * */
 export async function observe(obs: Observation): Promise<void> {
+  // our own files (the content script's chunks the page loads): no ads, no training data
+  if (isOwnUrl(obs.req.url)) return;
   count(`sw.observations.${obs.source}`);
   log.trace(obs.source, obs.req.type, obs.req.url, obs.req.body?.length);
   // TODO: the features ignore xhr bodies, even for JS the page evals. Classify them as "script", or only keep them as data?

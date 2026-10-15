@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { flags } from '@/flags'
+import { flags } from '@/lib/flags'
 import { decode, encode, gauge, initSink, record, type Sample } from '.'
 
 // initSink writes to the outbox (IndexedDB); collect the samples here instead

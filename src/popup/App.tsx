@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { flags } from '@/flags'
-import { clearOutbox, deleteUpTo, exportOutbox, outboxStats } from '@/perf/outbox'
+import { flags } from '@/lib/flags'
+import { clearOutbox, deleteUpTo, exportOutbox, outboxStats } from '@/lib/perf/outbox'
 
 /** Outbox size + rule cap. */
 async function load() {

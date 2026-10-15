@@ -1,5 +1,5 @@
 import { decode, encode, type OutboxRecord, type Sample } from ".";
-import { logger } from "@/log";
+import { logger } from "@/lib/log";
 
 const log = logger("perf");
 

@@ -29,18 +29,18 @@ Load the extension in Chrome: open `chrome://extensions/`, enable "Developer mod
 
 ```
 manifest.config.ts       extension manifest
-src/flags.ts             build-time feature flags
+src/lib/flags.ts         build-time feature flags
 src/popup/               popup UI
 src/background/          service worker: webRequest, refetches
-src/collect/             Observation type, observe(): features, then classification in src/offscreen
+src/lib/collect/         Observation type, observe(): features, then classification in src/offscreen
 src/model/               any tfjs Layers model: loading, predict(), gradient(), inspectModes()
 src/offscreen/           offscreen document + worker: learner and rule ids, outlive the service worker
-src/block/               dynamic block rules: applies the worker's rule changes, restores them to a new worker
-src/learn/               batches requests, classifies and trains on each batch, FedAvg rounds (flags.learn)
-src/label/               label(): training labels, black box (stub)
-src/perf/                performance metrics: record() in every context, aggregated in the offscreen worker
+src/lib/block/           dynamic block rules: applies the worker's rule changes, restores them to a new worker
+src/lib/learn/           batches requests, classifies and trains on each batch, FedAvg rounds (flags.learn)
+src/lib/label/           label(): training labels, black box (stub)
+src/lib/perf/            performance metrics: record() in every context, aggregated in the offscreen worker
 bench/                   page load with and without the extension, plus its metrics (Puppeteer + CDP)
-src/features/            TS side of feature extraction: extract(), presets, TS features
+src/lib/features/        TS side of feature extraction: extract(), presets, TS features
 features/                Rust feature extraction
   src/lib.rs             maps feature names to values (features()); wasm API: extract(), inline_scripts(), inspect()
   src/url.rs             URL features: content_policy_type, url_length, is_third_party, keyword_raw_present,
@@ -56,7 +56,7 @@ features/                Rust feature extraction
 ## Capturing requests
 
 MV3 webRequest doesn't expose response bodies, so the background downloads them again. Each one produces an
-`Observation` (`src/collect`). Its features go to the learner in the offscreen document's worker (`src/offscreen`),
+`Observation` (`src/lib/collect`). Its features go to the learner in the offscreen document's worker (`src/offscreen`),
 which classifies it with the next batch and trains on it if it has a label:
 
 | Source       | Where                        | Covers                                  | Body                                                    |
@@ -113,12 +113,12 @@ extract(presets.adflush, { url, topLevelUrl, type, body, acornAsts });
 ### Add a feature
 
 A model is a list of feature names. Rust: add a match arm to `features` in `features/src/lib.rs` (the computation
-goes in `url.rs`, `js.rs` or a new module). TypeScript: add an entry to `tsFeatures` in `src/features/index.ts`;
+goes in `url.rs`, `js.rs` or a new module). TypeScript: add an entry to `tsFeatures` in `src/lib/features/index.ts`;
 a name there takes precedence over Rust.
 
 ### Test
 
-All tests run with vitest against the wasm build, through `src/features` like the extension uses it
+All tests run with vitest against the wasm build, through `src/lib/features` like the extension uses it
 (`vitest.config.ts`, tests in `src/**/*.test.ts` and `features/tests/*.test.ts`):
 
 ```sh
@@ -158,11 +158,11 @@ scripts and pages can be compared by writing its fixture elsewhere and running w
 
 ## Performance
 
-Behind `flags.perf` (`src/flags.ts`). Every context records samples with `record`/`since`/`count` (`src/perf`) and
-every `flushMs` writes them raw, with timestamps, to IndexedDB (`perf`/`outbox`, `src/perf/outbox.ts`): one record
+Behind `flags.perf` (`src/lib/flags.ts`). Every context records samples with `record`/`since`/`count` (`src/lib/perf`) and
+every `flushMs` writes them raw, with timestamps, to IndexedDB (`perf`/`outbox`, `src/lib/perf/outbox.ts`): one record
 per flush, names interned per record. The service worker and the offscreen worker write their own, content scripts
 message the service worker. The popup exports the outbox as gzipped NDJSON (`.ndjson.gz`, `{t, ctx, instance, name, value}` per line) and
-clears it; aggregation (percentiles etc.) happens offline. Upload to a server is a TODO in `src/perf/outbox.ts`.
+clears it; aggregation (percentiles etc.) happens offline. Upload to a server is a TODO in `src/lib/perf/outbox.ts`.
 
 - Latency: `sw.timeToRule` (request completed until its block rule is active, the request's repeats load until
   then), `sw.timeToVerdict`, and its stages: `sw.eventDelay`, `sw.topLevelUrl`, `sw.refetch`, `sw.ready`,
@@ -180,7 +180,7 @@ clears it; aggregation (percentiles etc.) happens offline. Upload to a server is
   (validated without classifying), `cache.evicted`, gauge `cache.size`, `sw.cacheLoad`/`sw.cacheSave`
 - Training (`flags.perf.fl`, off): `fl.loss`, `fl.siteGradNorm`/`siteClipped`, `fl.updateNorm`/`updateClipped`,
   `fl.rejected*`, `fl.roundMs`, `fl.roundRows`, `fl.updateBytes`, `fl.disagreement` (local vs global verdicts, a
-  second forward pass). Secret sharing metrics are TODOs at `SendUpdate` in `src/learn`.
+  second forward pass). Secret sharing metrics are TODOs at `SendUpdate` in `src/lib/learn`.
 
 ```sh
 bun run build
@@ -189,6 +189,6 @@ bun run bench -- --runs 10 --warmup 2 --cpu 4 http://localhost:8000/page.html   
 
 ## TODO
 
-- Seed randomness for tests and offline experiments: make `Reservoir`'s random source injectable (`src/learn`,
+- Seed randomness for tests and offline experiments: make `Reservoir`'s random source injectable (`src/lib/learn`,
   `Math.random` by default) and seed tfjs Dropout. Keep it unseeded in the extension, where a known seed lets a page
   predict which of its samples are replayed.

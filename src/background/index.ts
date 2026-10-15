@@ -1,8 +1,8 @@
-import { BODY_TYPES, observe, topLevelUrl, type Observation } from "../collect";
-import { flags } from "../flags";
-import { count, now, record, initSink, since } from "../perf";
-import { ruleKey } from "@/block";
-import { logger } from "@/log";
+import { BODY_TYPES, observe, topLevelUrl, type Observation } from "@/lib/collect";
+import { flags } from "@/lib/flags";
+import { count, now, record, initSink, since } from "@/lib/perf";
+import { ruleKey } from "@/lib/block";
+import { logger } from "@/lib/log";
 import * as checked from "./checked";
 
 const log = logger("sw");

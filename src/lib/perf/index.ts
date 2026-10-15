@@ -1,5 +1,5 @@
-import { flags } from "@/flags";
-import { outboxSink } from "../perf/outbox";
+import { flags } from "@/lib/flags";
+import { outboxSink } from "./outbox";
 
 // Perf metrics. Every context buffers samples -> sink, which writes them raw to IndexedDB (./outbox); analysed offline.
 // Prefix = where taken: sw, hop, worker/learner, block/rules/decision/sources, page, startup, fl.

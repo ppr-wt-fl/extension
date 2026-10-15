@@ -4,23 +4,23 @@ import {
   installedRules,
   isOwnUrl,
   ruleKey,
-} from "@/block";
-import { label } from "@/label";
+} from "@/lib/block";
+import { label } from "@/lib/label";
 import type {
   LearnerReply,
   LearnerRequest,
   RestoreRequest,
 } from "@/offscreen/worker";
 // FIXME: copy the model into this repo instead of importing it from the robustness-evaluation run
-import featureOrder from "../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/feature_order.json";
-import wasmUrl from "../../features/pkg/adflush_features_bg.wasm?url";
+import featureOrder from "../../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/feature_order.json";
+import wasmUrl from "../../../features/pkg/adflush_features_bg.wasm?url";
 import {
   extract as extractFeatures,
   initRust,
   type RequestInfo,
 } from "../features";
-import { logger } from "@/log";
-import { count, now, record, since } from "@/perf";
+import { logger } from "@/lib/log";
+import { count, now, record, since } from "@/lib/perf";
 
 const log = logger("collect");
 
@@ -117,7 +117,7 @@ async function ensureOffscreenDocument(timeout = 3_000): Promise<void> {
   await creatingOffscreen;
 }
 
-/** Classifies an observation with the next batch, which also trains on it if it has a label (src/learn).
+/** Classifies an observation with the next batch, which also trains on it if it has a label (src/lib/learn).
  * Computes features on callers thread. Resolves to whether to block it.
  * */
 export async function observe(obs: Observation): Promise<boolean> {

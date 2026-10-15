@@ -1,8 +1,8 @@
 /** Build-time feature flags. manifest.config.ts reads them too, so a flag can add permissions. */
 export const flags = {
-  /** Lowest console level logged (src/log.ts). "trace": every observation, "debug": rule changes. */
+  /** Lowest console level logged (src/lib/log.ts). "trace": every observation, "debug": rule changes. */
   log: "info" as "trace" | "debug" | "info" | "warn" | "error" | "silent",
-  /** On-device training of the local model (src/learn), FedAvg-style rounds. */
+  /** On-device training of the local model (src/lib/learn), FedAvg-style rounds. */
   learn: {
     /**
      * Which weights classify:
@@ -48,7 +48,7 @@ export const flags = {
     /** Delay before saving changes to storage.session, which batches them. */
     saveMs: 10_000,
   },
-  /** Perf metrics (src/perf), raw in IndexedDB, exported from the popup. */
+  /** Perf metrics (src/lib/perf), raw in IndexedDB, exported from the popup. */
   perf: {
     /** Adds unlimitedStorage + declarativeNetRequestFeedback (rule hits) permissions. */
     enabled: true,

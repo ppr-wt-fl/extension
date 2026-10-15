@@ -2,18 +2,18 @@ import { readFileSync } from 'node:fs'
 import { io, memory, setBackend } from '@tensorflow/tfjs'
 import '@tensorflow/tfjs-backend-wasm'
 import { beforeAll, expect, test, vi } from 'vitest'
-import { flags } from '@/flags'
+import { flags } from '@/lib/flags'
 import { loadModel, predict, THRESHOLD } from '@/model'
-import { initSink, type Sample } from '@/perf'
+import { initSink, type Sample } from '@/lib/perf'
 import { Learner, Reservoir, type LearnConfig } from '.'
 
 // initSink writes to the outbox (IndexedDB); collect the samples here instead
 const samples = vi.hoisted((): Sample[] => [])
-vi.mock('@/perf/outbox', () => ({ outboxSink: () => (s: Sample[]) => samples.push(...s) }))
+vi.mock('@/lib/perf/outbox', () => ({ outboxSink: () => (s: Sample[]) => samples.push(...s) }))
 
-// FIXME: use the copy of the model in this repo once it's there (see src/collect/index.ts)
+// FIXME: use the copy of the model in this repo once it's there (see src/lib/collect/index.ts)
 const dir = new URL(
-  '../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/',
+  '../../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/',
   import.meta.url,
 )
 const json = JSON.parse(readFileSync(new URL('model.json', dir), 'utf8')) as io.ModelJSON

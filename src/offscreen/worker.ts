@@ -2,12 +2,12 @@ import { env, io, memory, setBackend } from "@tensorflow/tfjs";
 import { setWasmPaths } from "@tensorflow/tfjs-backend-wasm";
 import tfWasmUrl from "@tensorflow/tfjs-backend-wasm/dist/tfjs-backend-wasm.wasm?url";
 import tfSimdUrl from "@tensorflow/tfjs-backend-wasm/dist/tfjs-backend-wasm-simd.wasm?url";
-import type { Source } from "@/collect";
-import { flags } from "@/flags";
-import { Learner } from "@/learn";
+import type { Source } from "@/lib/collect";
+import { flags } from "@/lib/flags";
+import { Learner } from "@/lib/learn";
 import { inputSize, loadModel, THRESHOLD } from "@/model";
-import { logger } from "@/log";
-import { count, gauge, now, initSink, since } from "@/perf";
+import { logger } from "@/lib/log";
+import { count, gauge, now, initSink, since } from "@/lib/perf";
 import { restoreRules, type RuleChange, ruleChange, rules } from "./rules";
 // FIXME: copy the model into this repo instead of importing it from the robustness-evaluation run
 import modelJson from "../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/model.json";
@@ -15,14 +15,14 @@ import featureOrder from "../../../robustness-evaluation/AdFlushAutokeras/source
 import weightsUrl from "../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/group1-shard1of1.bin?url";
 
 // Holds the state that should outlive the service worker, which Chrome stops when idle: the learner and the
-// block rules' ids. Lost when the browser or the extension restarts, except the rules (src/block).
+// block rules' ids. Lost when the browser or the extension restarts, except the rules (src/lib/block).
 
 /** One observation of a request, from the service worker. */
 export interface LearnerRequest {
   target: "offscreen";
-  /** Identifies the request, `ruleKey` in src/block */
+  /** Identifies the request, `ruleKey` in src/lib/block */
   request: string;
-  /** Whether the request can get a block rule, `blockable` in src/block */
+  /** Whether the request can get a block rule, `blockable` in src/lib/block */
   blockable: boolean;
   source: Source;
   features: number[];

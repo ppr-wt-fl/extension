@@ -1,4 +1,4 @@
-import { now } from "@/perf";
+import { now } from "@/lib/perf";
 import type { LearnerReply, OffscreenRequest } from "./worker";
 
 // Relays the service worker's requests to the learner, which runs in a worker so training doesn't block the main
@@ -29,5 +29,5 @@ chrome.runtime.onMessage.addListener(
   },
 );
 
-// the service worker waits for this before its first request (src/collect ensureOffscreenDocument)
+// the service worker waits for this before its first request (src/lib/collect ensureOffscreenDocument)
 void chrome.runtime.sendMessage({ offscreenReady: true });

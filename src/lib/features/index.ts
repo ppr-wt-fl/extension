@@ -3,8 +3,8 @@ import init, {
   inline_scripts,
   inspect,
   type InitInput,
-} from "../../features/pkg/adflush_features.js";
-import adflush from "../../features/presets/adflush.json";
+} from "../../../features/pkg/adflush_features.js";
+import adflush from "../../../features/presets/adflush.json";
 
 /** The request a feature vector is computed for. */
 export interface RequestInfo {

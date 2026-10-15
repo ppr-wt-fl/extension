@@ -3,7 +3,7 @@
 
 import { readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
-import { extract, presets, rustInspect, type RequestInfo } from '../../src/features'
+import { extract, presets, rustInspect, type RequestInfo } from '../../src/lib/features'
 
 interface Case {
   name?: string

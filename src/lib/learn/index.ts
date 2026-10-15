@@ -5,10 +5,10 @@ import {
   type LayersModel,
   type Tensor,
 } from "@tensorflow/tfjs";
-import { flags } from "@/flags";
+import { flags } from "@/lib/flags";
 import { gradient, inspectModes, predict, THRESHOLD } from "@/model";
-import { logger } from "@/log";
-import { count, now, record, since } from "@/perf";
+import { logger } from "@/lib/log";
+import { count, now, record, since } from "@/lib/perf";
 
 const log = logger("learn");
 

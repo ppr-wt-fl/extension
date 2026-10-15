@@ -1,6 +1,6 @@
 // ONlY FOR BENCHMARKING
 //
-// Page load with/without extension + extension metrics (src/perf).
+// Page load with/without extension + extension metrics (src/lib/perf).
 //   bun run build && bun bench/pageload.ts [--runs 10] [--warmup 2] [--cpu 4] [--modes none,extension] URL...
 // Fresh browser per mode (CHROME, default chromium: branded Chrome can't load unpacked). Warm-up = warm cache + JIT.
 // Serve pages locally. --cpu throttles pages only, not extension.

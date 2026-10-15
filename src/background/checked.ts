@@ -1,5 +1,5 @@
-import { flags } from "@/flags";
-import { count, gauge, now, since } from "@/perf";
+import { flags } from "@/lib/flags";
+import { count, gauge, now, since } from "@/lib/perf";
 
 // Requests already classified "allow", so a page load doesn't refetch, extract and classify them again. Blocked
 // requests never complete, so they never come back here, and a block verdict drops its entry: if its rule gets

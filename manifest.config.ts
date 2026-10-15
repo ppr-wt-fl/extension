@@ -1,6 +1,6 @@
 import { defineManifest } from "@crxjs/vite-plugin";
 import pkg from "./package.json" with { type: "json" };
-import { flags } from "./src/flags.ts";
+import { flags } from "./src/lib/flags.ts";
 
 export default defineManifest({
   manifest_version: 3,

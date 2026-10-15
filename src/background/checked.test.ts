@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { flags } from "@/flags";
+import { flags } from "@/lib/flags";
 
 let store: Record<string, unknown>;
 beforeEach(() => {
@@ -43,7 +43,7 @@ test("tier: fresh, then validate for bodies, then full past maxAgeMs", async () 
 test("put evicts the least recently used past maxEntries, touch counts as a use", async () => {
   const c = await import("./checked");
   // the module's own flags, a new instance since resetModules
-  const { flags } = await import("@/flags");
+  const { flags } = await import("@/lib/flags");
   const max = flags.cache.maxEntries;
   flags.cache.maxEntries = 2;
   try {

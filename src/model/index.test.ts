@@ -2,12 +2,12 @@ import { readFileSync } from "node:fs";
 import { io, layers, sequential, setBackend } from "@tensorflow/tfjs";
 import "@tensorflow/tfjs-backend-wasm";
 import { beforeAll, expect, test } from "vitest";
-import { presets } from "../features";
+import { presets } from "@/lib/features";
 import { inspectModes, loadModel, predict, THRESHOLD } from ".";
 
 console.warn(`Using a decission threshold of ${THRESHOLD}`);
 
-// FIXME: use the copy of the model in this repo once it's there (see src/collect/index.ts)
+// FIXME: use the copy of the model in this repo once it's there (see src/lib/collect/index.ts)
 const dir = new URL(
   "../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/",
   import.meta.url,

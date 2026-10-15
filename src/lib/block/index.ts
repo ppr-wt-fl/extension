@@ -1,7 +1,7 @@
-import type { RequestInfo } from "@/features";
+import type { RequestInfo } from "@/lib/features";
 import type { RuleChange } from "@/offscreen/rules";
-import { logger } from "@/log";
-import { count, now, since } from "@/perf";
+import { logger } from "@/lib/log";
+import { count, now, since } from "@/lib/perf";
 
 const log = logger("block");
 

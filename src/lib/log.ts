@@ -1,4 +1,4 @@
-import { flags } from "@/flags";
+import { flags } from "@/lib/flags";
 
 export const LEVELS = ["trace", "debug", "info", "warn", "error"] as const;
 export type Level = (typeof LEVELS)[number];

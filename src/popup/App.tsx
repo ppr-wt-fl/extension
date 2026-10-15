@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { flags } from "@/lib/flags";
+import { count } from "@/lib/perf";
 import { disabledSites, setSiteDisabled, siteDisabled } from "@/lib/block";
 import {
   clearOutbox,
@@ -74,6 +75,14 @@ function SiteToggle() {
         }}
       >
         turn {disabledStatus ? "on" : "off"}
+      </button>{" "}
+      <button
+        onClick={() => {
+          if (confirm("Report this site as broken?"))
+            count("block.breakageReported");
+        }}
+      >
+        report breakage
       </button>
     </p>
   );

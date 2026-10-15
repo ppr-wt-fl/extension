@@ -24,6 +24,10 @@ export default defineConfig({
     },
   },
   server: {
+    // the client runs on chrome-extension:// (no port), so vite must be told the ws port explicitly
+    port: 5173,
+    strictPort: true,
+    hmr: { port: 5173 },
     cors: {
       origin: [
         /chrome-extension:\/\//,

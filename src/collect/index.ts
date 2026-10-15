@@ -131,6 +131,7 @@ export async function observe(obs: Observation): Promise<void> {
   }
 
   let start = now();
+  // NOTE: always awaiting this stuff is going to put us at the back of the task queue, probably could be avoided you know?
   await Promise.all([rust, ensureOffscreenDocument()]);
   since("sw.ready", start);
 

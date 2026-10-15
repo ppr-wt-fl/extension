@@ -12,9 +12,15 @@ let next = 0;
 
 worker.onmessage = ({
   data,
-}: MessageEvent<{ id: number; reply: LearnerReply }>) => {
-  replies.get(data.id)?.(data.reply);
-  replies.delete(data.id);
+}: MessageEvent<{ id: number; reply: LearnerReply } | { failed: string }>) => {
+  if ("failed" in data) {
+    settleWorkersPendingRepliesWithErrors(
+      `worker failed to start: ${data.failed}`,
+    );
+  } else {
+    replies.get(data.id)?.(data.reply);
+    replies.delete(data.id);
+  }
 };
 
 // A dead worker never answers, and the service worker's sendMessage would wait forever on this live document. Answer

@@ -119,6 +119,7 @@ export class Learner {
       } catch (error) {
         // rejecting after the verdicts resolved does nothing, e.g. a failed SGD step
         log.error(error);
+        count("learner.batchFailed");
         for (const sample of queued) {
           sample.reject(error);
         }

@@ -144,6 +144,7 @@ async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
   } catch (error) {
     log.error("chrome.webRequest.onCompleted listener failed");
     log.error(error);
+    count("sw.listenerFailed");
   }
 }
 

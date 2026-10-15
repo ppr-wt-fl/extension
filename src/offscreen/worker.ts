@@ -72,6 +72,7 @@ if (flags.perf.enabled) {
         gauge(`learner.${k}`, v);
     } catch (error) {
       log.error("gauges failed", error);
+      count("worker.gaugesFailed");
     }
   }, flags.perf.flushMs);
 }
@@ -79,9 +80,10 @@ if (flags.perf.enabled) {
 // failing lists only lose the comparison, not the verdicts
 const checkLists =
   flags.lists && flags.perf.enabled
-    ? loadLists().catch(
-        (error) => void log.error("filter lists failed to load", error),
-      )
+    ? loadLists().catch((error) => {
+        log.error("filter lists failed to load", error);
+        count("worker.listsFailed");
+      })
     : undefined;
 
 const learnerPromise = (async () => {
@@ -121,6 +123,11 @@ const learnerPromise = (async () => {
   log.info(`learner ready in ${(now() - startupStart).toFixed(0)}ms`);
   return learner;
 })();
+// a rejection isn't an uncaught error, so worker.onerror never sees it: tell the document so it closes
+learnerPromise.catch((error) => {
+  log.error("learner failed to start", error);
+  self.postMessage({ failed: String(error) });
+});
 
 // Thank god this is single threaded, other wise this would be concurrency hell lol
 self.onmessage = async ({
@@ -172,7 +179,9 @@ self.onmessage = async ({
       const filterListResponse = blockedBy.length > 0 ? "block" : "allow";
 
       // confusion matrix per type, any list: filter-lists.<model>.<lists>.<type>
-      count(`filter-lists.${modelResponse}.${filterListResponse}.${message.req.type}`);
+      count(
+        `filter-lists.${modelResponse}.${filterListResponse}.${message.req.type}`,
+      );
 
       // per list: filter-lists.<list>.<model>.<type> when it blocks; it allowed the rest of filter-lists.<model>.*.<type>
       for (const name of blockedBy) {

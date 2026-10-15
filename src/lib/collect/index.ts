@@ -113,7 +113,13 @@ async function ensureOffscreenDocument(timeout = 3_000): Promise<void> {
       "offscreen document ready, restored rules:",
       restore.restore.length,
     );
-  })().finally(() => (creatingOffscreen = undefined));
+  })()
+    .catch((error) => {
+      // no document (createDocument failed), it never got ready, or the restore failed
+      count("sw.offscreenSetupFailed");
+      throw error;
+    })
+    .finally(() => (creatingOffscreen = undefined));
   await creatingOffscreen;
 }
 
@@ -166,12 +172,19 @@ export async function observe(obs: Observation): Promise<boolean> {
     reply = await chrome.runtime.sendMessage(request);
   } catch (error) {
     // the document is gone (crashed or closed): the next observation checks for it and recreates it
+    count("sw.offscreenUnreachable");
     restored = false;
     throw error;
   }
   if ("error" in reply) {
     // the worker died and the document closed itself; other errors leave it usable
-    if (reply.closing) restored = false;
+    // counted here, not in the document: it closes before its samples would flush
+    if (reply.closing) {
+      count("sw.offscreenClosing");
+      restored = false;
+    } else {
+      count("sw.learnerFailed");
+    }
     throw new Error(reply.error);
   }
   if (reply.repliedAt !== undefined) since("hop.workerToSw", reply.repliedAt);

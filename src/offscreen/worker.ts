@@ -50,7 +50,8 @@ export type OffscreenRequest = LearnerRequest | RestoreRequest;
 /** `block`: the request's verdict. `rule` is set when its decision changed. `repliedAt`: `now()`, for hop.* */
 export type LearnerReply =
   | { block?: boolean; rule?: RuleChange; repliedAt?: number }
-  | { error: string };
+  // `closing`: the worker died and the offscreen document is closing, the next request needs a new one
+  | { error: string; closing?: true };
 
 initSink("worker");
 const log = logger("worker");
@@ -60,22 +61,29 @@ let learner: Learner | undefined;
 // Gauges: current sizes, as a sample when they change
 if (flags.perf.enabled) {
   setInterval(() => {
-    const tf = memory();
-    gauge("rules", rules.size);
-    // growing = leak
-    gauge("tf.numTensors", tf.numTensors);
-    gauge("tf.numBytes", tf.numBytes);
-    for (const [k, v] of Object.entries(learner?.sizes() ?? {}))
-      gauge(`learner.${k}`, v);
+    // an uncaught error here reaches the document's worker.onerror, which closes it
+    try {
+      const tf = memory();
+      gauge("rules", rules.size);
+      // growing = leak
+      gauge("tf.numTensors", tf.numTensors);
+      gauge("tf.numBytes", tf.numBytes);
+      for (const [k, v] of Object.entries(learner?.sizes() ?? {}))
+        gauge(`learner.${k}`, v);
+    } catch (error) {
+      log.error("gauges failed", error);
+      count("worker.gaugesFailed");
+    }
   }, flags.perf.flushMs);
 }
 
 // failing lists only lose the comparison, not the verdicts
 const checkLists =
   flags.lists && flags.perf.enabled
-    ? loadLists().catch(
-        (error) => void log.error("filter lists failed to load", error),
-      )
+    ? loadLists().catch((error) => {
+        log.error("filter lists failed to load", error);
+        count("worker.listsFailed");
+      })
     : undefined;
 
 const learnerPromise = (async () => {
@@ -115,6 +123,11 @@ const learnerPromise = (async () => {
   log.info(`learner ready in ${(now() - startupStart).toFixed(0)}ms`);
   return learner;
 })();
+// a rejection isn't an uncaught error, so worker.onerror never sees it: tell the document so it closes
+learnerPromise.catch((error) => {
+  log.error("learner failed to start", error);
+  self.postMessage({ failed: String(error) });
+});
 
 // Thank god this is single threaded, other wise this would be concurrency hell lol
 self.onmessage = async ({
@@ -166,7 +179,9 @@ self.onmessage = async ({
       const filterListResponse = blockedBy.length > 0 ? "block" : "allow";
 
       // confusion matrix per type, any list: filter-lists.<model>.<lists>.<type>
-      count(`filter-lists.${modelResponse}.${filterListResponse}.${message.req.type}`);
+      count(
+        `filter-lists.${modelResponse}.${filterListResponse}.${message.req.type}`,
+      );
 
       // per list: filter-lists.<list>.<model>.<type> when it blocks; it allowed the rest of filter-lists.<model>.*.<type>
       for (const name of blockedBy) {

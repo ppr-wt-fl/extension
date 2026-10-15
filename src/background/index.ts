@@ -113,7 +113,7 @@ async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
       // Refetch the body, the model needs it anyway. Same hash as when classified: unchanged, skip the model
       const bodyBytes = hasBody ? await refetch(details.url, details.initiator) : undefined;
 
-      // a failed refetch never matches, so the next load refetches again
+      // a failed refetch gives 0, which never matches a stored body
       const bodyHash = bodyBytes ? await checked.hash30(bodyBytes) : 0;
 
       if (
@@ -130,7 +130,8 @@ async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
       const block = await classify(bodyBytes);
       if (block) {
         checked.drop(ruleKeyHash);
-      } else {
+      } else if (!hasBody || bodyBytes) {
+        // A body verdict made without its body is URL-only: don't cache it, or its validator would skip the next refetch
         checked.put(ruleKeyHash, {
           classifiedAt: t,
           checkedAt: t,

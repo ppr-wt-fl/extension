@@ -71,6 +71,13 @@ export function touch(key: number): void {
   entries.set(key, entry);
 }
 
+/** Forgets every verdict, so every request is classified again. */
+export async function clear(): Promise<void> {
+  await ready();
+  entries.clear();
+  await chrome.storage.session.remove("checked");
+}
+
 export function drop(key: number): void {
   if (entries.delete(key)) saveSoon();
 }

@@ -10,6 +10,7 @@ beforeEach(() => {
         get: async (k: string) => ({ [k]: store[k] }),
         set: async (items: Record<string, unknown>) =>
           void Object.assign(store, items),
+        remove: async (k: string) => void delete store[k],
       },
     },
   });
@@ -88,4 +89,17 @@ test("validator: strong ETag, else Last-Modified with length", async () => {
   expect(validator(h({ "Last-Modified": "x", "Content-Length": "3" }))).toBe(
     "x|3",
   );
+});
+
+test("clear forgets entries in memory and storage", async () => {
+  let c = await import("./checked");
+  c.put(1, entry(c.nowS()));
+  await c.save();
+  await c.clear();
+  expect(c.get(1)).toBeUndefined();
+
+  vi.resetModules();
+  c = await import("./checked");
+  await c.ready();
+  expect(c.get(1)).toBeUndefined();
 });

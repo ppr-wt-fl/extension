@@ -117,6 +117,13 @@ async function ensureOffscreenDocument(timeout = 3_000): Promise<void> {
   await creatingOffscreen;
 }
 
+/** Makes the next observation give the document the installed rules again, after they changed behind its back. */
+export async function restoreAgain(): Promise<void> {
+  // a restore in flight may carry rules read before the change
+  await creatingOffscreen?.catch(() => {});
+  restored = false;
+}
+
 /** Classifies an observation with the next batch, which also trains on it if it has a label (src/lib/learn).
  * Computes features on callers thread. Resolves to whether to block it.
  * */

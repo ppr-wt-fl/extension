@@ -145,16 +145,24 @@ export default function App() {
       <button onClick={() => download().then(setExported)}>export</button>{" "}
       {exported !== undefined && (
         <button
-          onClick={() =>
-            deleteUpTo(exported)
-              .then(() => setExported(undefined))
-              .then(refresh)
-          }
+          onClick={() => {
+            if (confirm("Delete the exported samples?"))
+              deleteUpTo(exported)
+                .then(() => setExported(undefined))
+                .then(refresh);
+          }}
         >
           clear exported
         </button>
       )}{" "}
-      <button onClick={() => clearOutbox().then(refresh)}>clear all</button>{" "}
+      <button
+        onClick={() => {
+          if (confirm("Delete all samples, including unexported ones?"))
+            clearOutbox().then(refresh);
+        }}
+      >
+        clear all
+      </button>{" "}
       {reset}
       <table>
         <tbody>

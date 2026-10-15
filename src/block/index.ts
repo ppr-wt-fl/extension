@@ -1,7 +1,7 @@
 import type { RequestInfo } from "@/features";
 import type { RuleChange } from "@/offscreen/rules";
 import { logger } from "@/log";
-import { now, since } from "@/perf";
+import { count, now, since } from "@/perf";
 
 const log = logger("block");
 
@@ -97,7 +97,8 @@ let scheduled = false;
 let updating = Promise.resolve();
 
 /**
- * Queues a rule change. Changes are sent together once the current task ends, one update at a time.
+ * Queues a rule change. Changes are sent together once the current task ends, one update at a time: changes queued
+ * during an update go into the next one, since each update re-indexes every rule.
  * `observedAt`: `Observation.timeStamp`, for time to rule.
  */
 export function applyRule(
@@ -120,26 +121,29 @@ export function applyRule(
   // We push the flush to the back of the js task queue
   // so that all rule changes that come before it can be processed
   setTimeout(() => {
-    scheduled = false;
-    const batch = [...pending];
-    log.debug("rule update", batch);
-    const times = [...queuedAt.values()];
-    pending.clear();
-    queuedAt.clear();
     updating = updating
-      .then(() =>
-        chrome.declarativeNetRequest.updateDynamicRules({
-          // removing first lets an add replace a rule with the same id; unknown ids are ignored
-          removeRuleIds: batch.map(([id]) => id),
-          addRules: batch.flatMap(([, r]) => (r ? [r] : [])),
-        }),
-      )
       .then(() => {
-        for (const { queued, observed } of times) {
-          since("sw.ruleFlush", queued);
-          // until here, repeats still load
-          since("sw.timeToRule", observed);
-        }
+        // taken once the previous update is done, so everything queued meanwhile goes in one call
+        scheduled = false;
+        const batch = [...pending];
+        log.debug("rule update", batch);
+        const times = [...queuedAt.values()];
+        pending.clear();
+        queuedAt.clear();
+        count("sw.ruleUpdate");
+        return chrome.declarativeNetRequest
+          .updateDynamicRules({
+            // removing first lets an add replace a rule with the same id; unknown ids are ignored
+            removeRuleIds: batch.map(([id]) => id),
+            addRules: batch.flatMap(([, r]) => (r ? [r] : [])),
+          })
+          .then(() => {
+            for (const { queued, observed } of times) {
+              since("sw.ruleFlush", queued);
+              // until here, repeats still load
+              since("sw.timeToRule", observed);
+            }
+          });
       })
       .catch(log.error);
   });

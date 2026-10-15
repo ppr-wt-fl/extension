@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { blockable, installedRules, rule, ruleKey } from '.'
+import { applyRule, blockable, installedRules, rule, ruleKey } from '.'
 
 const runtime = { getURL: (path: string) => `chrome-extension://ours/${path}` }
 afterEach(() => vi.unstubAllGlobals())
@@ -54,4 +54,27 @@ test('blockable', () => {
   expect(blockable({ ...req, url: 'chrome-extension://ours/vendor/a.js' })).toBe(false)
   expect(blockable({ ...req, url: 'https://ads.example/ä.js' })).toBe(false)
   expect(blockable({ ...req, url: 'https://ads.example/a|b' })).toBe(false)
+})
+
+test('applyRule sends changes queued during an update in one next update', async () => {
+  let finish = () => {}
+  const updateDynamicRules = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)))
+  vi.stubGlobal('chrome', {
+    runtime,
+    declarativeNetRequest: { RuleActionType: { BLOCK: 'block' }, updateDynamicRules },
+  })
+  const tick = () => new Promise((resolve) => setTimeout(resolve))
+  applyRule({ action: 'add', id: 1 }, req, 0)
+  await tick()
+  expect(updateDynamicRules).toHaveBeenCalledTimes(1)
+  // the first update is still running
+  applyRule({ action: 'add', id: 2 }, req, 0)
+  await tick()
+  applyRule({ action: 'remove', id: 3 }, req, 0)
+  await tick()
+  expect(updateDynamicRules).toHaveBeenCalledTimes(1)
+  finish()
+  await tick()
+  expect(updateDynamicRules).toHaveBeenCalledTimes(2)
+  expect(updateDynamicRules).toHaveBeenLastCalledWith({ removeRuleIds: [2, 3], addRules: [rule(2, req)] })
 })

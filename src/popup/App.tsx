@@ -85,10 +85,26 @@ async function resetRules() {
     await chrome.runtime.sendMessage({ resetRules: true });
 }
 
+/** Blocked requests on the active tab since its last page load. */
+async function loadBlocked() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab?.id === undefined) return "n/a";
+  // Chrome keeps the matches of the tab's current document, so navigation, bfcache and prerender are handled
+  // rejects when rate limited or activeTab isn't granted (some chrome:// pages)
+  const matched = await chrome.declarativeNetRequest
+    .getMatchedRules({ tabId: tab.id })
+    .catch(() => undefined);
+  return matched?.rulesMatchedInfo.length ?? "n/a";
+}
+
 export default function App() {
   const [data, setData] = useState<Awaited<ReturnType<typeof load>>>();
   const [exported, setExported] = useState<IDBValidKey>();
-  const refresh = useCallback(() => load().then(setData), []);
+  const [blocked, setBlocked] = useState<number | string>();
+  const refresh = useCallback(() => {
+    loadBlocked().then(setBlocked);
+    if (flags.perf.enabled) load().then(setData);
+  }, []);
 
   useEffect(() => {
     refresh();
@@ -97,20 +113,25 @@ export default function App() {
   const reset = (
     <button onClick={() => resetRules().then(refresh)}>reset rules</button>
   );
+  const header = (
+    <>
+      <h1>Blocker</h1>
+      <p>Blocked on this page: {blocked ?? "…"}</p>
+      <SiteToggle />
+    </>
+  );
 
   if (!flags.perf.enabled)
     return (
       <main>
-        <h1>Blocker</h1>
-        <SiteToggle />
+        {header}
         {reset}
       </main>
     );
 
   return (
     <main style={{ font: "12px monospace", minWidth: 320, padding: 8 }}>
-      <h1>Blocker</h1>
-      <SiteToggle />
+      {header}
       <button onClick={refresh}>refresh</button>{" "}
       <button onClick={() => download().then(setExported)}>export</button>{" "}
       {exported !== undefined && (

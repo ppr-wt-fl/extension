@@ -10,12 +10,20 @@ import {
 
 /** Outbox size + rule cap. */
 async function load() {
+  const stats = await outboxStats();
   return {
-    ...(await outboxStats()),
+    records: stats.records,
+    size: stats.bytes === undefined ? undefined : formatSize(stats.bytes),
     "rules.installed": (await chrome.declarativeNetRequest.getDynamicRules())
       .length,
     "rules.cap": chrome.declarativeNetRequest.MAX_NUMBER_OF_DYNAMIC_RULES,
-  } as Record<string, number | undefined>;
+  };
+}
+
+/** Bytes as MB, or GB once it reaches 1000 MB. */
+function formatSize(bytes: number) {
+  const mb = bytes / 1e6;
+  return mb < 1000 ? `${mb.toFixed(1)} MB` : `${(mb / 1000).toFixed(2)} GB`;
 }
 
 /** Downloads the outbox as gzipped NDJSON, returns the last exported key. */

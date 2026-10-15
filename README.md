@@ -1,5 +1,7 @@
 # Blocker extension
 
+Testers: see [TESTERS.md](TESTERS.md) for installing, using and exporting logs.
+
 Chrome extension for ML-based ad and tracker blocking, built with React, TypeScript, Vite and CRXJS.
 Request features are computed in Rust (`features/`), compiled to wasm with wasm-bindgen.
 
@@ -24,6 +26,10 @@ bun run test             # vitest, includes build:features
 ```
 
 Load the extension in Chrome: open `chrome://extensions/`, enable "Developer mode" and load the unpacked `dist` directory.
+
+Release for testers: bump `version` in `package.json`, run `bun run build` and send
+`release/crx-blocker-extension-<version>.zip`. Build on your own machine: `src/offscreen/worker.ts` imports the model
+from `../../../../robustness-evaluation/AdFlushAutokeras/...`, outside this repository.
 
 ## Project structure
 

@@ -22,6 +22,11 @@ async function download() {
   return lastKey
 }
 
+/** Removes every block rule and cached verdict, in the service worker (src/background). */
+async function resetRules() {
+  if (confirm('Remove all block rules?')) await chrome.runtime.sendMessage({ resetRules: true })
+}
+
 export default function App() {
   const [data, setData] = useState<Awaited<ReturnType<typeof load>>>()
   const [exported, setExported] = useState<IDBValidKey>()
@@ -31,7 +36,15 @@ export default function App() {
     refresh()
   }, [refresh])
 
-  if (!flags.perf.enabled) return <h1>Blocker</h1>
+  const reset = <button onClick={() => resetRules().then(refresh)}>reset rules</button>
+
+  if (!flags.perf.enabled)
+    return (
+      <main>
+        <h1>Blocker</h1>
+        {reset}
+      </main>
+    )
 
   return (
     <main style={{ font: '12px monospace', minWidth: 320, padding: 8 }}>
@@ -43,7 +56,8 @@ export default function App() {
           clear exported
         </button>
       )}{' '}
-      <button onClick={() => clearOutbox().then(refresh)}>clear all</button>
+      <button onClick={() => clearOutbox().then(refresh)}>clear all</button>{' '}
+      {reset}
       <table>
         <tbody>
           {Object.entries(data ?? {}).map(([name, value]) => (

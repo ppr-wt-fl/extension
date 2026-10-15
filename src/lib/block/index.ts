@@ -126,6 +126,8 @@ export function applyRule(
         // taken once the previous update is done, so everything queued meanwhile goes in one call
         scheduled = false;
         const batch = [...pending];
+        // removeAllRules emptied the queue
+        if (!batch.length) return;
         log.debug("rule update", batch);
         const times = [...queuedAt.values()];
         pending.clear();
@@ -147,4 +149,16 @@ export function applyRule(
       })
       .catch(log.error);
   });
+}
+
+/** Drops the queued changes and removes every installed rule, after the update running now. */
+export function removeAllRules(): Promise<void> {
+  pending.clear();
+  queuedAt.clear();
+  const done = updating.then(async () => {
+    const ids = (await chrome.declarativeNetRequest.getDynamicRules()).map((r) => r.id);
+    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: ids });
+  });
+  updating = done.catch(log.error);
+  return done;
 }

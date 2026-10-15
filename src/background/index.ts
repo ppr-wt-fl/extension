@@ -1,7 +1,13 @@
-import { BODY_TYPES, observe, topLevelUrl, type Observation } from "@/lib/collect";
+import {
+  BODY_TYPES,
+  observe,
+  restoreAgain,
+  topLevelUrl,
+  type Observation,
+} from "@/lib/collect";
 import { flags } from "@/lib/flags";
 import { count, now, record, initSink, since } from "@/lib/perf";
-import { ruleKey } from "@/lib/block";
+import { removeAllRules, ruleKey } from "@/lib/block";
 import { logger } from "@/lib/log";
 import * as checked from "./checked";
 
@@ -139,6 +145,21 @@ async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
     log.error(error);
   }
 }
+
+// The popup's reset: no block rules, no cached verdicts. The worker then restores from the installed rules, else it
+// keeps the removed ones and never adds them again.
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.resetRules !== true) return;
+  (async () => {
+    await Promise.all([removeAllRules(), checked.clear()]);
+    await restoreAgain();
+    log.info("reset rules and verdict cache");
+  })()
+    .catch(log.error)
+    .finally(() => sendResponse());
+
+  return true;
+});
 
 // Rule hits, unpacked only. All rules block, so a hit is a blocked request; tab requests only, like
 // sw.requestsCompleted (blocked ones never complete).

@@ -176,6 +176,8 @@ clears it; aggregation (percentiles etc.) happens offline. Upload to a server is
   `flushMs`
 - Startup: `startup.*` in the worker, `sw.offscreenCreate`, counters `sw.starts`, `browser.starts`, `offscreen.creations`
 - Page: `sw.refetchBytes`
+- Cache (`src/background/checked.ts`): `cache.{fresh,needs-body-validation,run-from-scratch,inflight}` per request, `cache.validatorHit`/`bodyHit`
+  (validated without classifying), `cache.evicted`, gauge `cache.size`, `sw.cacheLoad`/`sw.cacheSave`
 - Training (`flags.perf.fl`, off): `fl.loss`, `fl.siteGradNorm`/`siteClipped`, `fl.updateNorm`/`updateClipped`,
   `fl.rejected*`, `fl.roundMs`, `fl.roundRows`, `fl.updateBytes`, `fl.disagreement` (local vs global verdicts, a
   second forward pass). Secret sharing metrics are TODOs at `SendUpdate` in `src/learn`.

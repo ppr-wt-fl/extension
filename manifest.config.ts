@@ -24,6 +24,8 @@ export default defineManifest({
     "webRequest",
     "offscreen",
     "declarativeNetRequest",
+    // storage.session: requests already checked (src/background/checked.ts)
+    "storage",
     // perf: IndexedDB outbox, rule hits (unpacked only)
     ...(flags.perf.enabled
       ? ["unlimitedStorage" as const, "declarativeNetRequestFeedback" as const]

@@ -43,9 +43,10 @@ export interface RestoreRequest {
 export type OffscreenRequest = LearnerRequest | RestoreRequest;
 
 // TODO: feels like this type shouldn't live here
-/** `rule` is set when the request's decision changed. `repliedAt`: `now()`, for hop.* */
+/** `block`: the request's verdict. `rule` is set when its decision changed. `repliedAt`: `now()`, for hop.* */
 export type LearnerReply =
-  { rule?: RuleChange; repliedAt?: number } | { error: string };
+  | { block?: boolean; rule?: RuleChange; repliedAt?: number }
+  | { error: string };
 
 initSink("worker");
 const log = logger("worker");
@@ -136,7 +137,12 @@ self.onmessage = async ({
     });
 
     const block = probability >= THRESHOLD;
-    log.trace(message.source, probability.toFixed(3), block ? "block" : "allow", message.request);
+    log.trace(
+      message.source,
+      probability.toFixed(3),
+      block ? "block" : "allow",
+      message.request,
+    );
     count(block ? "decision.block" : "decision.allow");
 
     // once per load: rule existed but request loaded (not installed yet / no match)
@@ -153,7 +159,8 @@ self.onmessage = async ({
       log.trace("block verdict, but not blockable", message.request);
       count("block.notBlockable");
     }
-    reply = { rule, repliedAt: now() };
+    // passing the block like this seems a bit awkward but it'll have to do for now
+    reply = { block, rule, repliedAt: now() };
   } catch (error) {
     log.error(error);
     reply = { error: String(error) };

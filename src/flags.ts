@@ -36,6 +36,18 @@ export const flags = {
     /** SGD steps (batches with training rows) per round. */
     roundSteps: 50,
   },
+  /** Skipping requests already classified "allow" (src/background/checked.ts). */
+  cache: {
+    enabled: true,
+    /** A request with a body is skipped this long after its last check, then revalidated by its headers or body. */
+    freshMs: 10 * 60_000,
+    /** A request is classified again this long after it was, whatever its headers or body: the model may have changed. */
+    maxAgeMs: 24 * 3_600_000,
+    /** Least recently used evicted past this, ~60 B each in memory, 24 B in storage.session (10 MB quota). */
+    maxEntries: 100_000,
+    /** Delay before saving changes to storage.session, which batches them. */
+    saveMs: 10_000,
+  },
   /** Perf metrics (src/perf), raw in IndexedDB, exported from the popup. */
   perf: {
     /** Adds unlimitedStorage + declarativeNetRequestFeedback (rule hits) permissions. */

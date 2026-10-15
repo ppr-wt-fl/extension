@@ -1,4 +1,10 @@
-import { applyRule, blockable, installedRules, isOwnUrl, ruleKey } from "@/block";
+import {
+  applyRule,
+  blockable,
+  installedRules,
+  isOwnUrl,
+  ruleKey,
+} from "@/block";
 import { label } from "@/label";
 import type {
   LearnerReply,
@@ -110,11 +116,11 @@ async function ensureOffscreenDocument(timeout = 3_000): Promise<void> {
 }
 
 /** Classifies an observation with the next batch, which also trains on it if it has a label (src/learn).
- * Computes features on callers thread
+ * Computes features on callers thread. Resolves to whether to block it.
  * */
-export async function observe(obs: Observation): Promise<void> {
+export async function observe(obs: Observation): Promise<boolean> {
   // our own files (the content script's chunks the page loads): no ads, no training data
-  if (isOwnUrl(obs.req.url)) return;
+  if (isOwnUrl(obs.req.url)) return false;
   count(`sw.observations.${obs.source}`);
   log.trace(obs.source, obs.req.type, obs.req.url, obs.req.body?.length);
   // TODO: the features ignore xhr bodies, even for JS the page evals. Classify them as "script", or only keep them as data?
@@ -134,7 +140,6 @@ export async function observe(obs: Observation): Promise<void> {
   if (obs.req.body !== undefined)
     record(`sw.featuresBodyChars.${obs.req.type}`, obs.req.body.length);
 
-  // TODO: skip classifying a body identical to one already classified for this request (hash it)
   const request: LearnerRequest = {
     target: "offscreen",
     request: ruleKey(obs.req),
@@ -154,6 +159,8 @@ export async function observe(obs: Observation): Promise<void> {
   if (reply.rule) {
     applyRule(reply.rule, obs.req, obs.timeStamp);
   }
+
+  return reply.block === true;
 }
 
 /** The URL of the page in a tab. A request that completes right after a navigation gets the new page's URL. */

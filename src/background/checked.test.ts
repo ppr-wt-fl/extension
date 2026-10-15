@@ -27,7 +27,7 @@ const entry = (t: number) => ({
 test("tier: fresh, then validate for bodies, then full past maxAgeMs", async () => {
   const c = await import("./checked");
   const t = c.nowS();
-  const key = await c.hashRuleKey("k");
+  const key = c.hashRuleKey("k");
   expect(c.tier(key, true, t)).toBe("run-from-scratch");
   c.put(key, entry(t));
   expect(c.tier(key, true, t + 1)).toBe("fresh");
@@ -64,7 +64,7 @@ test("put evicts the least recently used past maxEntries, touch counts as a use"
 test("save then load keeps 53-bit keys, fields and order, drops expired", async () => {
   let c = await import("./checked");
   const t = c.nowS();
-  const key = await c.hashRuleKey("big");
+  const key = c.hashRuleKey("big");
   expect(key).toBeGreaterThan(2 ** 32);
   c.put(key, entry(t));
   c.put(9, entry(t - flags.cache.maxAgeMs / 1000 - 1));

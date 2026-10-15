@@ -81,10 +81,25 @@ async function sha256(data: string | ArrayBuffer): Promise<DataView> {
   return new DataView(await crypto.subtle.digest("SHA-256", bytes));
 }
 
-/** 53 bits of a `ruleKey`'s hash, the most a number holds exactly: ~5e-7 expected collisions at 100k entries. */
-export async function hashRuleKey(ruleKey: string): Promise<number> {
-  const v = await sha256(ruleKey);
-  return (v.getUint32(0) & 0x1f_ffff) * 2 ** 32 + v.getUint32(4);
+/**
+ * 53-bit hash of a `ruleKey` (cyrb53), the most a number holds exactly: ~5e-7 expected collisions at 100k entries.
+ * Synchronous, unlike crypto.subtle, so a cache hit doesn't wait a task. Not collision resistant against crafted URLs.
+ */
+export function hashRuleKey(ruleKey: string): number {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < ruleKey.length; i++) {
+    const c = ruleKey.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 =
+    Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^
+    Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 =
+    Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^
+    Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (0x1f_ffff & h2) + (h1 >>> 0);
 }
 
 /** 30 bits of a hash, never 0. Only compared with the same key's previous one. */

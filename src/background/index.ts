@@ -70,7 +70,7 @@ async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
 
     await checked.ready();
 
-    const ruleKeyHash = await checked.hashRuleKey(ruleKey(observation.req));
+    const ruleKeyHash = checked.hashRuleKey(ruleKey(observation.req));
     const tier = checked.tier(ruleKeyHash, hasBody);
     count(`cache.${tier}`);
 

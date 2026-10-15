@@ -108,7 +108,10 @@ async function ensureOffscreenDocument(timeout = 3_000): Promise<void> {
       since("sw.offscreenCreate", start);
       count("offscreen.creations");
     }
-    log.info("offscreen document ready, restored rules:", restore.restore.length);
+    log.info(
+      "offscreen document ready, restored rules:",
+      restore.restore.length,
+    );
   })().finally(() => (creatingOffscreen = undefined));
   await creatingOffscreen;
 }

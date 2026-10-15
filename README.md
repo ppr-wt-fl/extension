@@ -180,7 +180,8 @@ clears it; aggregation (percentiles etc.) happens offline. Upload to a server is
 - Memory: gauges `tf.numTensors`/`tf.numBytes` (leaks), `learner.*`, sampled by the worker every
   `flushMs`
 - Startup: `startup.*` in the worker, `sw.offscreenCreate`, counters `sw.starts`, `browser.starts`, `offscreen.creations`
-- Page: `sw.refetchBytes`
+- Page: `sw.refetchBytes`, `sw.refetchFailed` (error, timeout, not 2xx), `sw.refetchSkipped` (binary type or over
+  `flags.refetch.maxBytes`)
 - Cache (`src/background/checked.ts`): `cache.{fresh,needs-body-validation,run-from-scratch,inflight}` per request, `cache.validatorHit`/`bodyHit`
   (validated without classifying), `cache.evicted`, gauge `cache.size`, `sw.cacheLoad`/`sw.cacheSave`
 - Training (`flags.perf.fl`, off): `fl.loss`, `fl.siteGradNorm`/`siteClipped`, `fl.updateNorm`/`updateClipped`,

@@ -1,3 +1,4 @@
+import { flags } from "@/lib/flags";
 import { literalUrlFilter, refererRule } from "@/lib/block";
 import { logger } from "@/lib/log";
 import { count, now, record, since } from "@/lib/perf";
@@ -45,14 +46,42 @@ export async function refetch(
         .updateSessionRules({ addRules: [refererRule(ruleId, url, referer)] })
         .catch(log.error);
     }
-    const response = await fetch(url, { credentials: "include" });
+    // the timeout also aborts reading the body
+    const response = await fetch(url, {
+      credentials: "include",
+      signal: AbortSignal.timeout(flags.refetch.timeoutMs),
+    });
     if (!response.ok) {
       log.debug("refetch failed", response.status, url);
       count("sw.refetchFailed");
       return undefined;
     }
-    // decompressed: upper bound of extra traffic
-    const bytes = await response.arrayBuffer();
+    // a navigation can be a video or a PDF; a script runs whatever its type (S3 serves binary/octet-stream), so only skip clear binaries
+    const type = response.headers.get("content-type");
+    const length = Number(response.headers.get("content-length"));
+    if (
+      (type && /^(image|video|audio|font)\/|application\/pdf/i.test(type)) ||
+      length > flags.refetch.maxBytes
+    ) {
+      log.debug("refetch skipped", type, length, url);
+      count("sw.refetchSkipped");
+      await response.body?.cancel();
+      return undefined;
+    }
+
+    // decompressed: upper bound of extra traffic. Read in chunks, a body without Content-Length can be any size.
+    const chunks: Uint8Array<ArrayBuffer>[] = [];
+    let size = 0;
+    for await (const chunk of response.body ?? []) {
+      size += chunk.byteLength;
+      if (size > flags.refetch.maxBytes) {
+        log.debug("refetch skipped", type, size, url);
+        count("sw.refetchSkipped");
+        return undefined; // leaving the loop cancels the stream
+      }
+      chunks.push(chunk);
+    }
+    const bytes = await new Blob(chunks).arrayBuffer();
     record("sw.refetchBytes", bytes.byteLength);
     since("sw.refetch", start);
     return bytes;

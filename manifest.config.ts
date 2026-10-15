@@ -7,6 +7,8 @@ export default defineManifest({
   name: pkg.name,
   description: pkg.description,
   version: pkg.version,
+  // async iteration of a ReadableStream (refetch)
+  minimum_chrome_version: "124",
   icons: {
     48: "public/logo.png",
   },

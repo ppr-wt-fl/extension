@@ -30,9 +30,13 @@ export default defineManifest({
     "storage",
     // popup: declarativeNetRequest.getMatchedRules for the active tab
     "activeTab",
-    // perf: IndexedDB outbox, rule hits (unpacked only)
+    // perf: IndexedDB outbox, rule hits, export knowing the file was saved (unpacked only)
     ...(flags.perf.enabled
-      ? ["unlimitedStorage" as const, "declarativeNetRequestFeedback" as const]
+      ? [
+          "unlimitedStorage" as const,
+          "declarativeNetRequestFeedback" as const,
+          "downloads" as const,
+        ]
       : []),
   ],
   host_permissions: ["<all_urls>"],

@@ -27,14 +27,29 @@ function formatSize(bytes: number) {
   return mb < 1000 ? `${mb.toFixed(1)} MB` : `${(mb / 1000).toFixed(2)} GB`;
 }
 
-/** Downloads the outbox as gzipped NDJSON, returns the last exported key. */
+/** Downloads the outbox as gzipped NDJSON, returns the last exported key once the file is saved. */
 async function download() {
   const { blob, lastKey } = await exportOutbox();
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `perf-${new Date().toISOString()}.ndjson.gz`;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  const url = URL.createObjectURL(blob);
+  try {
+    // chrome.downloads, not <a download>: "clear exported" must only show once the file is really on disk
+    const id = await chrome.downloads.download({
+      url,
+      // ":" is an invalid filename character on Windows, rejected by chrome.downloads
+      filename: `perf-${new Date().toISOString().replace(/:/g, "-")}.ndjson.gz`,
+    });
+    await new Promise<void>((resolve, reject) => {
+      const onChanged = (delta: chrome.downloads.DownloadDelta) => {
+        if (delta.id !== id || !delta.state) return;
+        chrome.downloads.onChanged.removeListener(onChanged);
+        if (delta.state.current === "complete") resolve();
+        else reject(new Error(`download ${delta.error?.current}`));
+      };
+      chrome.downloads.onChanged.addListener(onChanged);
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
   return lastKey;
 }
 
@@ -109,6 +124,7 @@ async function loadBlocked() {
 export default function App() {
   const [data, setData] = useState<Awaited<ReturnType<typeof load>>>();
   const [exported, setExported] = useState<IDBValidKey>();
+  const [downloading, setDownloading] = useState(false);
   const [blocked, setBlocked] = useState<number | string>();
   const refresh = useCallback(() => {
     loadBlocked().then(setBlocked);
@@ -142,7 +158,22 @@ export default function App() {
     <main style={{ font: "12px monospace", minWidth: 320, padding: 8 }}>
       {header}
       <button onClick={refresh}>refresh</button>{" "}
-      <button onClick={() => download().then(setExported)}>export</button>{" "}
+      {/* a popup closes on blur (Save As dialog, a click outside), killing a long export; a tab doesn't */}
+      <button onClick={() => chrome.tabs.create({ url: location.href })}>
+        open in tab
+      </button>{" "}
+      <button
+        disabled={downloading}
+        onClick={() => {
+          setDownloading(true);
+          download()
+            .then(setExported)
+            .catch((error) => alert(`Export failed: ${error}`))
+            .finally(() => setDownloading(false));
+        }}
+      >
+        export
+      </button>{" "}
       {exported !== undefined && (
         <button
           onClick={() => {
@@ -164,6 +195,11 @@ export default function App() {
         clear all
       </button>{" "}
       {reset}
+      {downloading && (
+        <p>
+          <b>Keep this open until the download is done.</b>
+        </p>
+      )}
       <table>
         <tbody>
           {Object.entries(data ?? {}).map(([name, value]) => (

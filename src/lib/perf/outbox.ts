@@ -62,20 +62,20 @@ export async function exportOutbox(): Promise<{
   // one Blob per record: Chrome can keep Blob data off the JS heap, unlike millions of strings
   const parts: Blob[] = [];
   let lastKey: IDBValidKey | undefined;
-  await new Promise<void>((resolve, reject) => {
-    const request = tx.objectStore(STORE).openCursor();
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (!cursor) return resolve();
-      const rows = [...decode(cursor.value as OutboxRecord)].map((row) =>
-        JSON.stringify(row),
-      );
-      parts.push(new Blob([rows.join("\n") + "\n"]));
-      lastKey = cursor.key;
-      cursor.continue();
-    };
-    request.onerror = () => reject(request.error);
-  });
+  const request = tx.objectStore(STORE).openCursor();
+  request.onsuccess = () => {
+    const cursor = request.result;
+    if (!cursor) return;
+    const rows = [...decode(cursor.value as OutboxRecord)].map((row) =>
+      JSON.stringify(row),
+    );
+    parts.push(new Blob([rows.join("\n") + "\n"]));
+    lastKey = cursor.key;
+    cursor.continue();
+  };
+  // the transaction, not request.onerror: a throw in onsuccess aborts it without firing onerror, hanging the export
+  await done(tx);
+  // shortcut: whole file built in memory before download, fine for a few hundred MB gzipped; export in key ranges if it outgrows that
   const gzip = new Blob(parts).stream().pipeThrough(new CompressionStream("gzip"));
   return {
     blob: await new Response(gzip).blob(),

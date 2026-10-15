@@ -3,7 +3,8 @@ use oxc_allocator::Allocator;
 use oxc_parser::{ParseOptions, Parser};
 use oxc_span::SourceType;
 use regex::Regex;
-use serde_json::Value;
+use serde::de::{self, Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -145,15 +146,20 @@ pub fn inline_scripts(html: &str) -> Vec<&str> {
 
 // None where the Python pipeline throws and the script gets no features
 fn script_features(source: &str, acorn_ast: Option<&str>) -> Option<Script> {
-    let (types, ident_len, ident_count) = match acorn_ast {
-        Some(json) => walk_ast(json, true)?,
-        None => walk_ast(&oxc_ast(source), false)?,
+    let oxc_json;
+    let json = match acorn_ast {
+        Some(json) => json,
+        None => {
+            oxc_json = oxc_ast(source);
+            &oxc_json
+        }
     };
+    let (types, ident_len, ident_count) = walk_ast(json, acorn_ast.is_some())?;
 
     let token_dict = ngram_token_dict();
     let mut tokens = Vec::new();
     for t in &types {
-        tokens.push(*token_dict.get(t)?);
+        tokens.push(*token_dict.get(t.as_ref())?);
     }
     let mut ngram_counts: HashMap<String, f64> = HashMap::new();
     let mut ngram_len = 0;
@@ -218,12 +224,89 @@ fn oxc_ast(source: &str) -> String {
     parsed.program.to_estree_json(false, false)
 }
 
+// The parts of the ESTree JSON walk needs; deserializing straight into this skips serde_json::Value's
+// IndexMap and owned strings. Strings borrow from the JSON unless they contain escapes.
+enum N<'a> {
+    Obj(Vec<(Cow<'a, str>, N<'a>)>),
+    Arr(Vec<N<'a>>),
+    Str(Cow<'a, str>),
+    Leaf,
+}
+
+impl<'a> N<'a> {
+    // Linear scan: ESTree nodes have few keys. Last match wins, like a map with a duplicate key.
+    fn get<'b>(kids: &'b [(Cow<'a, str>, N<'a>)], key: &str) -> Option<&'b N<'a>> {
+        kids.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v)
+    }
+}
+
+struct Key<'a>(Cow<'a, str>);
+
+impl<'de> Deserialize<'de> for Key<'de> {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_str(NVisitor).and_then(|n| match n {
+            N::Str(s) => Ok(Key(s)),
+            _ => Err(de::Error::custom("expected key")),
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for N<'de> {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_any(NVisitor)
+    }
+}
+
+struct NVisitor;
+
+impl<'de> Visitor<'de> for NVisitor {
+    type Value = N<'de>;
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("JSON")
+    }
+    fn visit_borrowed_str<E>(self, s: &'de str) -> Result<N<'de>, E> {
+        Ok(N::Str(Cow::Borrowed(s)))
+    }
+    fn visit_str<E>(self, s: &str) -> Result<N<'de>, E> {
+        Ok(N::Str(Cow::Owned(s.to_owned())))
+    }
+    fn visit_bool<E>(self, _: bool) -> Result<N<'de>, E> {
+        Ok(N::Leaf)
+    }
+    fn visit_i64<E>(self, _: i64) -> Result<N<'de>, E> {
+        Ok(N::Leaf)
+    }
+    fn visit_u64<E>(self, _: u64) -> Result<N<'de>, E> {
+        Ok(N::Leaf)
+    }
+    fn visit_f64<E>(self, _: f64) -> Result<N<'de>, E> {
+        Ok(N::Leaf)
+    }
+    fn visit_unit<E>(self) -> Result<N<'de>, E> {
+        Ok(N::Leaf)
+    }
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<N<'de>, A::Error> {
+        let mut items = Vec::new();
+        while let Some(item) = seq.next_element()? {
+            items.push(item);
+        }
+        Ok(N::Arr(items))
+    }
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<N<'de>, A::Error> {
+        let mut kids = Vec::new();
+        while let Some((Key(k), v)) = map.next_entry()? {
+            kids.push((k, v));
+        }
+        Ok(N::Obj(kids))
+    }
+}
+
 // Walks the ESTree JSON like Python's treewalk. Acorn JSON is walked in its own key order,
 // oxc JSON in acorn's order from child_keys. Returns (node types in post-order, identifier length sum, identifier count).
-fn walk_ast(json: &str, acorn_order: bool) -> Option<(Vec<String>, usize, usize)> {
+fn walk_ast(json: &str, acorn_order: bool) -> Option<(Vec<Cow<'_, str>>, usize, usize)> {
     let mut deserializer = serde_json::Deserializer::from_str(json);
     deserializer.disable_recursion_limit();
-    let ast: Value = serde::Deserialize::deserialize(&mut deserializer).ok()?;
+    let ast = N::deserialize(&mut deserializer).ok()?;
 
     let mut types = Vec::new();
     let mut ident_len = 0;
@@ -239,11 +322,11 @@ fn walk_ast(json: &str, acorn_order: bool) -> Option<(Vec<String>, usize, usize)
     Some((types, ident_len, ident_count))
 }
 
-fn walk(
-    value: &Value,
+fn walk<'a>(
+    value: &N<'a>,
     depth: usize,
     acorn_order: bool,
-    types: &mut Vec<String>,
+    types: &mut Vec<Cow<'a, str>>,
     ident_len: &mut usize,
     ident_count: &mut usize,
 ) -> Option<()> {
@@ -251,34 +334,40 @@ fn walk(
         return None;
     }
     match value {
-        Value::Array(items) => {
+        N::Arr(items) => {
             for item in items {
                 walk(item, depth + 1, acorn_order, types, ident_len, ident_count)?;
             }
         }
-        Value::Object(node) => {
+        N::Obj(node) => {
             // acorn's JSON.stringify throws on BigInt values, so ast_parser.js produces no AST
-            if node.contains_key("bigint") {
+            if node.iter().any(|(k, _)| k == "bigint") {
                 return None;
             }
-            let node_type = node.get("type").and_then(Value::as_str);
+            let node_type = match N::get(node, "type") {
+                Some(N::Str(s)) => Some(s),
+                _ => None,
+            };
             if acorn_order {
-                for child in node.values() {
+                for (_, child) in node {
                     walk(child, depth + 1, acorn_order, types, ident_len, ident_count)?;
                 }
             } else if let Some(node_type) = node_type {
                 for key in child_keys(node_type) {
-                    if let Some(child) = node.get(*key) {
+                    if let Some(child) = N::get(node, key) {
                         walk(child, depth + 1, acorn_order, types, ident_len, ident_count)?;
                     }
                 }
             }
-            if node_type == Some("Identifier") {
-                *ident_len += node["name"].as_str()?.chars().count();
+            if node_type.is_some_and(|t| t == "Identifier") {
+                let Some(N::Str(name)) = N::get(node, "name") else {
+                    return None;
+                };
+                *ident_len += name.chars().count();
                 *ident_count += 1;
             }
             if let Some(node_type) = node_type {
-                types.push(node_type.to_string());
+                types.push(node_type.clone());
             }
         }
         _ => {}

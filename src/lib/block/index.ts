@@ -163,6 +163,14 @@ export async function setSiteDisabled(
 
   // add host back in if needed
   if (disabled) sites.push(host);
+
+  // record
+  if (disabled) {
+    count("block.siteDisabledByUser");
+  } else {
+    count("block.siteReenabledByUser");
+  }
+
   await chrome.declarativeNetRequest.updateDynamicRules({
     removeRuleIds: [ALLOW_RULE_ID],
     // requestDomains can't be empty: no sites, no rule
@@ -260,7 +268,9 @@ export function removeAllRules(): Promise<void> {
       .map((r) => r.id)
       // the user's disabled sites aren't block rules
       .filter((id) => id !== ALLOW_RULE_ID);
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: ids });
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: ids,
+    });
   });
   updating = done.catch(log.error);
   return done;

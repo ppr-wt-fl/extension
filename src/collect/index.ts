@@ -54,7 +54,6 @@ const FEATURES = featureOrder.feature_order.map((name) =>
 // in dev wasmUrl is root-relative to the vite server, not the extension origin
 const rust = initRust(new URL(wasmUrl, import.meta.url));
 
-// NOTE: maybe calling chrome.runtime.getContexts every time might be a bit too much
 let creatingOffscreen: Promise<void> | undefined;
 /**
  * Whether this service worker gave the document the installed rules. Else its rule ids restart at 1 and overwrite
@@ -63,6 +62,9 @@ let creatingOffscreen: Promise<void> | undefined;
 let restored = false;
 /** Creates the offscreen document holding the learner (src/offscreen) unless it exists, and gives it the installed rules. */
 async function ensureOffscreenDocument(timeout = 3_000): Promise<void> {
+  // set up by this service worker; a failed send resets `restored` in case the document died
+  if (restored && !creatingOffscreen) return;
+
   const contexts = await chrome.runtime.getContexts({
     contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
   });
@@ -151,7 +153,14 @@ export async function observe(obs: Observation): Promise<boolean> {
     sentAt: now(),
   };
 
-  const reply: LearnerReply = await chrome.runtime.sendMessage(request);
+  let reply: LearnerReply;
+  try {
+    reply = await chrome.runtime.sendMessage(request);
+  } catch (error) {
+    // the document is gone (crashed or closed): the next observation checks for it and recreates it
+    restored = false;
+    throw error;
+  }
   if ("error" in reply) throw new Error(reply.error);
   if (reply.repliedAt !== undefined) since("hop.workerToSw", reply.repliedAt);
   since("sw.timeToVerdict", obs.timeStamp);
@@ -163,10 +172,24 @@ export async function observe(obs: Observation): Promise<boolean> {
   return reply.block === true;
 }
 
+/** Tab URLs seen by `topLevelUrl`, kept current by tab events, so most requests skip `chrome.tabs.get`. */
+const tabUrls = new Map<number, string>();
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  if (change.url) tabUrls.set(tabId, change.url);
+});
+chrome.tabs.onRemoved.addListener((tabId) => tabUrls.delete(tabId));
+chrome.tabs.onReplaced.addListener((_added, removed) =>
+  tabUrls.delete(removed),
+);
+
 /** The URL of the page in a tab. A request that completes right after a navigation gets the new page's URL. */
 export async function topLevelUrl(tabId: number): Promise<string | undefined> {
+  const known = tabUrls.get(tabId);
+  if (known) return known;
   try {
-    return (await chrome.tabs.get(tabId)).url;
+    const url = (await chrome.tabs.get(tabId)).url;
+    if (url) tabUrls.set(tabId, url);
+    return url;
   } catch {
     // tab closed, or a prerendering tab
     return undefined;

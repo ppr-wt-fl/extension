@@ -26,6 +26,8 @@ export default defineManifest({
     "declarativeNetRequest",
     // storage.session: requests already checked (src/background/checked.ts)
     "storage",
+    // popup: declarativeNetRequest.getMatchedRules for the active tab
+    "activeTab",
     // perf: IndexedDB outbox, rule hits (unpacked only)
     ...(flags.perf.enabled
       ? ["unlimitedStorage" as const, "declarativeNetRequestFeedback" as const]

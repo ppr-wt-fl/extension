@@ -67,26 +67,93 @@ export function rule(id: number, req: RequestInfo): Rule {
  */
 export async function installedRules(): Promise<{ key: string; id: number }[]> {
   const all = await chrome.declarativeNetRequest.getDynamicRules();
-  const bad = all.filter((r) => isOwnUrl(r.condition.urlFilter?.slice(1) ?? ""));
+  const bad = all.filter((r) =>
+    isOwnUrl(r.condition.urlFilter?.slice(1) ?? ""),
+  );
   if (bad.length) {
     log.info("removing rules of own files:", bad.length);
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: bad.map((r) => r.id) });
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: bad.map((r) => r.id),
+    });
   }
-  return all.filter((r) => !bad.includes(r)).flatMap(
-    ({ id, condition: { urlFilter, initiatorDomains, resourceTypes } }) =>
-      urlFilter && initiatorDomains?.length && resourceTypes?.length
-        ? [
-            {
-              id,
-              key: key(
-                urlFilter.slice(1, -1),
-                initiatorDomains[0],
-                resourceTypes[0],
-              ),
-            },
-          ]
-        : [],
+  return all
+    .filter((r) => !bad.includes(r))
+    .flatMap(
+      ({ id, condition: { urlFilter, initiatorDomains, resourceTypes } }) =>
+        urlFilter && initiatorDomains?.length && resourceTypes?.length
+          ? [
+              {
+                id,
+                key: key(
+                  urlFilter.slice(1, -1),
+                  initiatorDomains[0],
+                  resourceTypes[0],
+                ),
+              },
+            ]
+          : [],
+    );
+}
+
+/**
+ * Id of the one rule that turns blocking off on the sites the user picked in the popup. Block rule ids count up from 1
+ * (src/offscreen/rules.ts) and never reach this. `installedRules` skips it as it has no urlFilter, so the worker never
+ * learns about it.
+ */
+const ALLOW_RULE_ID = 2 ** 31 - 1;
+
+/** Hostnames blocking is off on. Stored in the allow rule itself, so the rule can't get out of sync with a list. */
+export async function disabledSites(): Promise<string[]> {
+  const [allow] = await chrome.declarativeNetRequest.getDynamicRules({
+    ruleIds: [ALLOW_RULE_ID],
+  });
+  return allow?.condition.requestDomains ?? [];
+}
+
+/** Whether blocking is off on `host`. requestDomains also matches subdomains, so "example.com" covers "www.example.com". */
+export function siteDisabled(sites: string[], host: string): boolean {
+  return sites.some((site) => host === site || host.endsWith(`.${site}`));
+}
+
+/**
+ * Turns blocking on `host` off or on, like uBlock Origin Lite's power button. Takes effect on the next page load: DNR
+ * checks allowAllRequests when a frame navigates.
+ */
+export async function setSiteDisabled(
+  host: string,
+  disabled: boolean,
+): Promise<void> {
+  // Drop host and subdomains
+  const sites = (await disabledSites()).filter(
+    (site) => !siteDisabled([site], host),
   );
+
+  // add host back in if needed
+  if (disabled) sites.push(host);
+  await chrome.declarativeNetRequest.updateDynamicRules({
+    removeRuleIds: [ALLOW_RULE_ID],
+    // requestDomains can't be empty: no sites, no rule
+    addRules: sites.length
+      ? [
+          {
+            id: ALLOW_RULE_ID,
+            // above the block rules' 1. allowAllRequests on the top-level page allows every request of the page and
+            // its iframes, so their block rules never apply
+            priority: 2,
+            action: {
+              type: chrome.declarativeNetRequest.RuleActionType
+                .ALLOW_ALL_REQUESTS,
+            },
+            condition: {
+              requestDomains: sites,
+              resourceTypes: [
+                chrome.declarativeNetRequest.ResourceType.MAIN_FRAME,
+              ],
+            },
+          },
+        ]
+      : [],
+  });
 }
 
 /** Rule changes not sent yet, by id: the rule to add, or null to only remove. The latest change of an id wins. */

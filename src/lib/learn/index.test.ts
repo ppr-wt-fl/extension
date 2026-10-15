@@ -13,7 +13,7 @@ vi.mock('@/lib/perf/outbox', () => ({ outboxSink: () => (s: Sample[]) => samples
 
 // FIXME: use the copy of the model in this repo once it's there (see src/lib/collect/index.ts)
 const dir = new URL(
-  '../../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/',
+  '../../../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/',
   import.meta.url,
 )
 const json = JSON.parse(readFileSync(new URL('model.json', dir), 'utf8')) as io.ModelJSON

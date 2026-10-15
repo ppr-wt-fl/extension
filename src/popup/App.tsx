@@ -1,48 +1,110 @@
-import { useCallback, useEffect, useState } from 'react'
-import { flags } from '@/lib/flags'
-import { clearOutbox, deleteUpTo, exportOutbox, outboxStats } from '@/lib/perf/outbox'
+import { useCallback, useEffect, useState } from "react";
+import { flags } from "@/lib/flags";
+import { disabledSites, setSiteDisabled, siteDisabled } from "@/lib/block";
+import {
+  clearOutbox,
+  deleteUpTo,
+  exportOutbox,
+  outboxStats,
+} from "@/lib/perf/outbox";
 
 /** Outbox size + rule cap. */
 async function load() {
   return {
     ...(await outboxStats()),
-    'rules.installed': (await chrome.declarativeNetRequest.getDynamicRules()).length,
-    'rules.cap': chrome.declarativeNetRequest.MAX_NUMBER_OF_DYNAMIC_RULES,
-  } as Record<string, number | undefined>
+    "rules.installed": (await chrome.declarativeNetRequest.getDynamicRules())
+      .length,
+    "rules.cap": chrome.declarativeNetRequest.MAX_NUMBER_OF_DYNAMIC_RULES,
+  } as Record<string, number | undefined>;
 }
 
 /** Downloads the outbox as gzipped NDJSON, returns the last exported key. */
 async function download() {
-  const { blob, lastKey } = await exportOutbox()
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = `perf-${new Date().toISOString()}.ndjson.gz`
-  a.click()
-  URL.revokeObjectURL(a.href)
-  return lastKey
+  const { blob, lastKey } = await exportOutbox();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `perf-${new Date().toISOString()}.ndjson.gz`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  return lastKey;
+}
+
+/** Turns blocking on the active tab's site off or on, then reloads the tab so it applies. */
+function SiteToggle() {
+  const [tab, setTab] = useState<chrome.tabs.Tab>();
+  const [disabledStatus, setDisabledStatus] = useState<boolean>();
+  // http(s) pages only: other schemes have no hostname or can't be blocked on anyway
+  const host =
+    tab?.url && /^https?:/.test(tab.url)
+      ? new URL(tab.url).hostname
+      : undefined;
+
+  useEffect(() => {
+    chrome.tabs
+      .query({ active: true, currentWindow: true })
+      .then(([t]) => setTab(t));
+  }, []);
+
+  useEffect(() => {
+    if (!host) return;
+
+    disabledSites().then((sites) => {
+      const isHostDisabled = siteDisabled(sites, host);
+      setDisabledStatus(isHostDisabled);
+    });
+  }, [host]);
+
+  if (!host || disabledStatus === undefined) return null;
+  return (
+    <p>
+      {host}: blocking {disabledStatus ? "off" : "on"}{" "}
+      <button
+        onClick={async () => {
+          await setSiteDisabled(host, !disabledStatus);
+          setDisabledStatus(!disabledStatus);
+          chrome.tabs.reload(tab!.id!);
+        }}
+      >
+        turn {disabledStatus ? "on" : "off"}
+      </button>
+    </p>
+  );
 }
 
 export default function App() {
-  const [data, setData] = useState<Awaited<ReturnType<typeof load>>>()
-  const [exported, setExported] = useState<IDBValidKey>()
-  const refresh = useCallback(() => load().then(setData), [])
+  const [data, setData] = useState<Awaited<ReturnType<typeof load>>>();
+  const [exported, setExported] = useState<IDBValidKey>();
+  const refresh = useCallback(() => load().then(setData), []);
 
   useEffect(() => {
-    refresh()
-  }, [refresh])
+    refresh();
+  }, [refresh]);
 
-  if (!flags.perf.enabled) return <h1>Blocker</h1>
+  if (!flags.perf.enabled)
+    return (
+      <main>
+        <h1>Blocker</h1>
+        <SiteToggle />
+      </main>
+    );
 
   return (
-    <main style={{ font: '12px monospace', minWidth: 320, padding: 8 }}>
+    <main style={{ font: "12px monospace", minWidth: 320, padding: 8 }}>
       <h1>Blocker</h1>
-      <button onClick={refresh}>refresh</button>{' '}
-      <button onClick={() => download().then(setExported)}>export</button>{' '}
+      <SiteToggle />
+      <button onClick={refresh}>refresh</button>{" "}
+      <button onClick={() => download().then(setExported)}>export</button>{" "}
       {exported !== undefined && (
-        <button onClick={() => deleteUpTo(exported).then(() => setExported(undefined)).then(refresh)}>
+        <button
+          onClick={() =>
+            deleteUpTo(exported)
+              .then(() => setExported(undefined))
+              .then(refresh)
+          }
+        >
           clear exported
         </button>
-      )}{' '}
+      )}{" "}
       <button onClick={() => clearOutbox().then(refresh)}>clear all</button>
       <table>
         <tbody>
@@ -55,5 +117,5 @@ export default function App() {
         </tbody>
       </table>
     </main>
-  )
+  );
 }

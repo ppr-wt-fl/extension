@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { applyRule, blockable, installedRules, rule, ruleKey } from '.'
+import { applyRule, blockable, installedRules, rule, ruleKey, siteDisabled } from '.'
 
 const runtime = { getURL: (path: string) => `chrome-extension://ours/${path}` }
 afterEach(() => vi.unstubAllGlobals())
@@ -77,4 +77,12 @@ test('applyRule sends changes queued during an update in one next update', async
   await tick()
   expect(updateDynamicRules).toHaveBeenCalledTimes(2)
   expect(updateDynamicRules).toHaveBeenLastCalledWith({ removeRuleIds: [2, 3], addRules: [rule(2, req)] })
+})
+
+test('siteDisabled matches the site and its subdomains only', () => {
+  const sites = ['example.com']
+  expect(siteDisabled(sites, 'example.com')).toBe(true)
+  expect(siteDisabled(sites, 'www.example.com')).toBe(true)
+  expect(siteDisabled(sites, 'badexample.com')).toBe(false)
+  expect(siteDisabled([], 'example.com')).toBe(false)
 })

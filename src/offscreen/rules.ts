@@ -11,8 +11,11 @@ export interface RuleChange {
   evict?: number;
 }
 
-/** chrome.declarativeNetRequest.MAX_NUMBER_OF_DYNAMIC_RULES, which the worker can't read. */
-export const MAX_RULES = 30_000;
+/**
+ * chrome.declarativeNetRequest.MAX_NUMBER_OF_DYNAMIC_RULES, which the worker can't read, minus the slot of the
+ * allow rule for sites with blocking turned off (ALLOW_RULE_ID in src/lib/block).
+ */
+export const MAX_RULES = 30_000 - 1;
 
 /**
  * Id of the block rule of each request key that has one, oldest first. The decision only changes the rules when it

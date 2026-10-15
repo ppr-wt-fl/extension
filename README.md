@@ -138,7 +138,7 @@ In `features/`:
 ```sh
 uv venv -p 3.8 .venv
 uv pip install -p .venv/bin/python tldextract==5.1.2 beautifulsoup4 numpy==1.21.6 pandas tqdm gensim scikit-learn six
-.venv/bin/python tests/reference.py --yopo ../../robustness-evaluation/YOPO \
+.venv/bin/python tests/reference.py --yopo ../../../robustness-evaluation/YOPO \
     tests/fixtures/expected.json tests/fixtures/js/* tests/fixtures/html/*
 ```
 

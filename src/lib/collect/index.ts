@@ -12,7 +12,7 @@ import type {
   RestoreRequest,
 } from "@/offscreen/worker";
 // FIXME: copy the model into this repo instead of importing it from the robustness-evaluation run
-import featureOrder from "../../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/feature_order.json";
+import featureOrder from "../../../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/feature_order.json";
 import wasmUrl from "../../../features/pkg/adflush_features_bg.wasm?url";
 import {
   extract as extractFeatures,

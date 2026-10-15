@@ -2,7 +2,7 @@
 
 Needs node/npm and Python 3.8 with: tldextract==5.1.2 beautifulsoup4 numpy==1.21.6 pandas tqdm gensim scikit-learn six
 
-    python tests/reference.py --yopo ../../robustness-evaluation/YOPO tests/fixtures/expected.json tests/fixtures/js/* tests/fixtures/html/*
+    python tests/reference.py --yopo ../../../robustness-evaluation/YOPO tests/fixtures/expected.json tests/fixtures/js/* tests/fixtures/html/*
 
 Every .js file becomes a "script" case, every .html file a "sub_frame" case.
 """

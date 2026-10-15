@@ -1,19 +1,5 @@
 import { expect, test } from 'vitest'
-import type { Source } from '@/collect'
-import { flags } from '@/flags'
-import { decide, MAX_RULES, restoreRules, ruleChange, rules } from './rules'
-
-test.each([
-  // [reconcile, verdicts by source, block]
-  ['canonical', [['webRequest', true], ['refetch', false]], false],
-  ['canonical', [['dom', false], ['debugger', true], ['captured_by_patch', false]], true],
-  ['any', [['webRequest', false], ['refetch', true]], true],
-  ['any', [['webRequest', false], ['dom', false]], false],
-] as const)('%s %j -> %s', (reconcile, verdicts, block) => {
-  flags.reconcile = reconcile
-  expect(decide(new Map(verdicts as unknown as [Source, boolean][]))).toBe(block)
-  flags.reconcile = 'canonical'
-})
+import { MAX_RULES, restoreRules, ruleChange, rules } from './rules'
 
 test('ruleChange adds once, removes once, evicts the oldest past the limit', () => {
   const first = ruleChange('a', true)!

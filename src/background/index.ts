@@ -1,9 +1,7 @@
 import { BODY_TYPES, observe, topLevelUrl, type Observation } from "../collect";
-import type { RelayMessage } from "../content/relay";
 import { flags } from "../flags";
 import { count, now, record, initSink, since } from "../perf";
 import { logger } from "@/log";
-import { captureWithDebugger } from "./debugger";
 
 const log = logger("sw");
 
@@ -61,57 +59,6 @@ async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
     log.error(error);
   }
 }
-
-chrome.runtime.onMessage.addListener((message: RelayMessage, sender) => {
-  const tabId = sender.tab?.id;
-  const top = sender.tab?.url;
-  if (tabId === undefined || !top || !sender.url) return;
-
-  //  Flushed performance metrics
-  if (message.source === "patch_perf") {
-    // content script metrics for patched request functions
-    record("page.patchMs", message.ms);
-    record("page.patchCaptures", message.captures);
-    return;
-  }
-  if (message.source === "relay_perf") {
-    // message realying perf data
-    record("page.relayMs", message.ms);
-    return;
-  }
-
-  if (message.source === "dom" && message.serializeMs !== undefined) {
-    record("page.outerHtmlMs", message.serializeMs);
-    record("page.outerHtmlChars", message.body.length);
-  }
-
-  const isPatch = message.source === "captured_by_patch";
-  if (isPatch && !flags.patchWebpageRequests) {
-    log.trace("dropped captured_by_patch, flag off", message.url);
-    return;
-  }
-  observe({
-    source: message.source,
-    req: {
-      // webRequest URLs have no fragment
-      url: isPatch ? message.url : sender.url.split("#")[0],
-      topLevelUrl: top,
-      // Chrome's webRequest type for both fetch and XHR
-      type: isPatch
-        ? "xmlhttprequest"
-        : sender.frameId === 0
-          ? "main_frame"
-          : "sub_frame",
-      body: message.body,
-    },
-    tabId,
-    frameId: sender.frameId,
-    method: isPatch ? message.method : undefined,
-    timeStamp: Date.now(),
-  }).catch(log.error);
-});
-
-if (flags.debugger) captureWithDebugger();
 
 // Rule hits, unpacked only. All rules block, so a hit is a blocked request; tab requests only, like
 // sw.requestsCompleted (blocked ones never complete).

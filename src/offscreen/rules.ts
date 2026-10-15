@@ -1,5 +1,3 @@
-import type { Source } from "@/collect";
-import { flags } from "@/flags";
 import { logger } from "@/log";
 
 const log = logger("rules");
@@ -17,20 +15,8 @@ export interface RuleChange {
 export const MAX_RULES = 30_000;
 
 /**
- * How close each source's body is to what the page got, higher is closer. The debugger and the patch see the page's
- * response itself, but the page can spoof patch messages. A refetch is a second response, the DOM isn't a response.
- */
-const BODY_RANK: Record<Source, number> = {
-  debugger: 4,
-  captured_by_patch: 3,
-  refetch: 2,
-  dom: 1,
-  webRequest: 0,
-};
-
-/**
  * Id of the block rule of each request key that has one, oldest first. The decision only changes the rules when it
- * changes, as every source of a request sends its own verdict.
+ * changes, as a request is classified again on every load.
  */
 export const rules = new Map<string, number>();
 let nextRuleId = 1;
@@ -68,11 +54,3 @@ export function ruleChange(key: string, block: boolean): RuleChange | undefined 
   }
 }
 
-/** Whether to block a request, from its sources' verdicts, as set by `flags.reconcile`. */
-export function decide(bySource: Map<Source, boolean>): boolean {
-  if (flags.reconcile === "any") return [...bySource.values()].some(Boolean);
-  const best = [...bySource.keys()].reduce((a, b) =>
-    BODY_RANK[b] > BODY_RANK[a] ? b : a,
-  );
-  return bySource.get(best)!;
-}

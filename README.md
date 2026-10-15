@@ -31,11 +31,10 @@ Load the extension in Chrome: open `chrome://extensions/`, enable "Developer mod
 manifest.config.ts       extension manifest
 src/flags.ts             build-time feature flags
 src/popup/               popup UI
-src/background/          service worker: webRequest, refetches, chrome.debugger capture
-src/content/             content scripts: fetch/XHR patch (MAIN world), relay to the background
+src/background/          service worker: webRequest, refetches
 src/collect/             Observation type, observe(): features, then classification in src/offscreen
 src/model/               any tfjs Layers model: loading, predict(), gradient(), inspectModes()
-src/offscreen/           offscreen document + worker: learner, verdicts and rule ids, outlive the service worker
+src/offscreen/           offscreen document + worker: learner and rule ids, outlive the service worker
 src/block/               dynamic block rules: applies the worker's rule changes, restores them to a new worker
 src/learn/               batches requests, classifies and trains on each batch, FedAvg rounds (flags.learn)
 src/label/               label(): training labels, black box (stub)
@@ -56,7 +55,7 @@ features/                Rust feature extraction
 
 ## Capturing requests
 
-MV3 webRequest doesn't expose response bodies, so they are collected in several ways. Each one produces an
+MV3 webRequest doesn't expose response bodies, so the background downloads them again. Each one produces an
 `Observation` (`src/collect`). Its features go to the learner in the offscreen document's worker (`src/offscreen`),
 which classifies it with the next batch and trains on it if it has a label:
 
@@ -64,17 +63,9 @@ which classifies it with the next batch and trains on it if it has a label:
 | ------------ | ---------------------------- | --------------------------------------- | ------------------------------------------------------- |
 | `webRequest` | `src/background/index.ts`    | every request from a tab                | none, for types whose features don't read it            |
 | `refetch`    | `src/background/index.ts`    | GET `script`, `sub_frame`, `main_frame` | downloaded again; cache, cookies and Referer can differ |
-| `patch`      | `src/content/patch.ts`       | the page's own `fetch`/XHR              | the exact response the page got                         |
-| `dom`        | `src/content/relay.ts`       | every frame, on `load`                  | `outerHTML`: the document after parsing and scripts     |
-| `debugger`   | `src/background/debugger.ts` | every request, behind `flags.debugger`  | the exact response, through the DevTools Protocol       |
-
-External scripts (`<script src>`) are therefore captured by `refetch`, or by `debugger` when enabled. The fetch/XHR
-patch doesn't see them. `patch.ts` runs in the page's JS world at `document_start` and must not import or export
-anything at runtime: CRXJS then injects it as is, before the page's scripts. It posts its captures to `relay.ts`,
-which forwards them to the background. The page can post the same messages, so `patch` data is untrusted.
-
-`flags.debugger` is off by default. When on, it adds the `debugger` permission, and Chrome shows a "started
-debugging this browser" banner on every tab.
+Only sources a page can't forge are used. Page-side capture (a fetch/XHR patch, the frames' `outerHTML`) was
+removed: any script on the page can tamper with it. `chrome.debugger` was removed too: it needs the `debugger`
+permission and shows a banner on every tab.
 
 ## Features
 
@@ -178,13 +169,13 @@ clears it; aggregation (percentiles etc.) happens offline. Upload to a server is
   `sw.features.<type>`, `hop.*` (SW → offscreen → worker → SW), `learner.queueWait`, `learner.train`/`infer`/`batch`,
   `worker.handle`, `sw.ruleFlush`
 - Blocking: `block.hits` (rules that blocked, needs declarativeNetRequestFeedback, unpacked only), `rules.added` (each
-  one's request loaded first), `block.loadedDespiteRule`, `decision.flips`, `sources.disagree`, `sw.requestsCompleted`
+  one's request loaded first), `block.loadedDespiteRule`, `sw.requestsCompleted`
   (`block.hits / (block.hits + sw.requestsCompleted)` = share blocked); gauge `rules` and, in the popup,
   `rules.installed` against `rules.cap`
-- Memory: gauges `tf.numTensors`/`tf.numBytes` (leaks), `verdicts`, `learner.*`, sampled by the worker every
+- Memory: gauges `tf.numTensors`/`tf.numBytes` (leaks), `learner.*`, sampled by the worker every
   `flushMs`
 - Startup: `startup.*` in the worker, `sw.offscreenCreate`, counters `sw.starts`, `browser.starts`, `offscreen.creations`
-- Page: `page.patchMs`, `page.relayMs`, `page.outerHtmlMs` (content scripts' main-thread time), `sw.refetchBytes`
+- Page: `sw.refetchBytes`
 - Training (`flags.perf.fl`, off): `fl.loss`, `fl.siteGradNorm`/`siteClipped`, `fl.updateNorm`/`updateClipped`,
   `fl.rejected*`, `fl.roundMs`, `fl.roundRows`, `fl.updateBytes`, `fl.disagreement` (local vs global verdicts, a
   second forward pass). Secret sharing metrics are TODOs at `SendUpdate` in `src/learn`.

@@ -24,33 +24,12 @@ export default defineManifest({
     "webRequest",
     "offscreen",
     "declarativeNetRequest",
-    ...(flags.debugger ? ["debugger" as const] : []),
     // perf: IndexedDB outbox, rule hits (unpacked only)
     ...(flags.perf.enabled
       ? ["unlimitedStorage" as const, "declarativeNetRequestFeedback" as const]
       : []),
   ],
   host_permissions: ["<all_urls>"],
-  content_scripts: [
-    ...(flags.patchWebpageRequests
-      ? [
-          {
-            // patches fetch/XHR before the page's scripts run
-            js: ["src/content/patch.ts"],
-            matches: ["<all_urls>"],
-            run_at: "document_start" as const,
-            all_frames: true,
-            world: "MAIN" as const,
-          },
-        ]
-      : []),
-    {
-      js: ["src/content/relay.ts"],
-      matches: ["<all_urls>"],
-      run_at: "document_start",
-      all_frames: true,
-    },
-  ],
   content_security_policy: {
     // instantiating the feature extraction wasm needs wasm-unsafe-eval
     extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",

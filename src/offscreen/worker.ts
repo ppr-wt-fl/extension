@@ -8,25 +8,19 @@ import { Learner } from "@/learn";
 import { inputSize, loadModel, THRESHOLD } from "@/model";
 import { logger } from "@/log";
 import { count, gauge, now, initSink, since } from "@/perf";
-import {
-  decide,
-  restoreRules,
-  type RuleChange,
-  ruleChange,
-  rules,
-} from "./rules";
+import { restoreRules, type RuleChange, ruleChange, rules } from "./rules";
 // FIXME: copy the model into this repo instead of importing it from the robustness-evaluation run
 import modelJson from "../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/model.json";
 import featureOrder from "../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/feature_order.json";
 import weightsUrl from "../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/group1-shard1of1.bin?url";
 
-// Holds the state that should outlive the service worker, which Chrome stops when idle: the learner, the
-// verdicts and the block rules' ids. Lost when the browser or the extension restarts, except the rules (src/block).
+// Holds the state that should outlive the service worker, which Chrome stops when idle: the learner and the
+// block rules' ids. Lost when the browser or the extension restarts, except the rules (src/block).
 
 /** One observation of a request, from the service worker. */
 export interface LearnerRequest {
   target: "offscreen";
-  /** Identifies the request across its sources, `ruleKey` in src/block */
+  /** Identifies the request, `ruleKey` in src/block */
   request: string;
   /** Whether the request can get a block rule, `blockable` in src/block */
   blockable: boolean;
@@ -53,10 +47,6 @@ export type OffscreenRequest = LearnerRequest | RestoreRequest;
 export type LearnerReply =
   { rule?: RuleChange; repliedAt?: number } | { error: string };
 
-/** Latest verdict of each source, by request, least recently observed first. */
-const verdicts = new Map<string, Map<Source, boolean>>();
-const MAX_VERDICTS = 50_000;
-
 initSink("worker");
 const log = logger("worker");
 
@@ -66,7 +56,6 @@ let learner: Learner | undefined;
 if (flags.perf.enabled) {
   setInterval(() => {
     const tf = memory();
-    gauge("verdicts", verdicts.size);
     gauge("rules", rules.size);
     // growing = leak
     gauge("tf.numTensors", tf.numTensors);
@@ -146,35 +135,12 @@ self.onmessage = async ({
       label: message.label,
     });
 
-    const bySource =
-      verdicts.get(message.request) ?? new Map<Source, boolean>();
-    const before = bySource.size > 0 ? decide(bySource) : undefined;
-
-    // re-inserted to move it to the end, so the least recently observed is evicted
-    verdicts.delete(message.request);
-    verdicts.set(
-      message.request,
-      bySource.set(message.source, probability >= THRESHOLD),
-    );
-    if (verdicts.size > MAX_VERDICTS) {
-      verdicts.delete(verdicts.keys().next().value!);
-    }
-
-    const block = decide(bySource);
+    const block = probability >= THRESHOLD;
     log.trace(message.source, probability.toFixed(3), block ? "block" : "allow", message.request);
     count(block ? "decision.block" : "decision.allow");
-    if (before !== undefined && before !== block) {
-      count("decision.flips");
-      log.debug(block ? "flip to block" : "flip to allow", message.request, Object.fromEntries(bySource));
-    }
-    if (new Set(bySource.values()).size > 1) count("sources.disagree");
 
     // once per load: rule existed but request loaded (not installed yet / no match)
-    if (
-      rules.has(message.request) &&
-      (message.source === "webRequest" || message.source === "refetch")
-    )
-      count("block.loadedDespiteRule");
+    if (rules.has(message.request)) count("block.loadedDespiteRule");
 
     let rule = undefined;
     if (message.blockable) {

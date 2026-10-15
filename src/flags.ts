@@ -1,22 +1,6 @@
 /** Build-time feature flags. manifest.config.ts reads them too, so a flag can add permissions. */
 export const flags = {
-  /**
-   * Capture response bodies with chrome.debugger (src/background/debugger.ts): the exact bytes the page got, for every
-   * request type. Needs the debugger permission, and Chrome shows a "started debugging this browser" banner.
-   */
-  debugger: false,
-  /**
-   * Capture fetch/XHR responses by patching them in the page (src/content/patch.ts). Off: the script isn't injected and
-   * the background drops captured_by_patch messages, which the page could still post.
-   */
-  patchWebpageRequests: false,
-  /**
-   * How the observations of one request (url, topLevelUrl, type) by different sources decide whether to block it:
-   * - "canonical": the verdict on the body closest to what the page got (see `BODY_RANK` in src/collect)
-   * - "any": block if any observation's verdict is block
-   */
-  reconcile: "canonical" as "canonical" | "any",
-  /** Lowest console level logged (src/log.ts). "trace": every observation, "debug": rule changes and flips. */
+  /** Lowest console level logged (src/log.ts). "trace": every observation, "debug": rule changes. */
   log: "info" as "trace" | "debug" | "info" | "warn" | "error" | "silent",
   /** On-device training of the local model (src/learn), FedAvg-style rounds. */
   learn: {
@@ -32,8 +16,6 @@ export const flags = {
      * - "training": like model.fit, the verdicts then need a second, inference-mode pass
      */
     trainMode: "inference" as "inference" | "training",
-    /** Sources a page can't forge. Not captured_by_patch: the page can post patch messages itself. */
-    sources: ["webRequest", "refetch", "dom", "debugger"] as readonly string[],
     /** A batch is classified and trained on when it has this many requests, */
     batchSize: 500,
     /** or no request arrived for this long. */

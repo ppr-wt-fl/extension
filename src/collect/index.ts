@@ -13,32 +13,25 @@ import {
   initRust,
   type RequestInfo,
 } from "../features";
-import { flags } from "@/flags";
 import { logger } from "@/log";
 import { count, now, record, since } from "@/perf";
 
 const log = logger("collect");
 
 /**
- * How a request was observed:
+ * How a request was observed, one source per request type. Only sources a page can't forge:
  * - webRequest: only the URL, for types whose features don't read the body
  * - refetch: the background downloaded the URL again, GET only, the response can differ from the page's
- * - patch: the page's fetch/XHR, read in the page's JS world (src/content/patch.ts)
- * - dom: the frame's `outerHTML` on load, the parsed and script-modified document instead of the response
- * - debugger: the exact response the page got, through the Chrome DevTools Protocol (behind `flags.debugger`)
  */
-export type Source =
-  "webRequest" | "refetch" | "captured_by_patch" | "dom" | "debugger";
+export type Source = "webRequest" | "refetch";
 
-/** One observation of a request. Several sources can observe the same request, with different bodies. */
+/** One observation of a request. */
 export interface Observation {
   source: Source;
   req: RequestInfo;
   tabId: number;
-  /** Unknown for the debugger */
-  frameId?: number;
-  /** Unknown for the DOM */
-  method?: string;
+  frameId: number;
+  method: string;
   /** ms since the epoch */
   timeStamp: number;
 }
@@ -149,7 +142,7 @@ export async function observe(obs: Observation): Promise<void> {
     source: obs.source,
     features: [...features],
     site: new URL(obs.req.topLevelUrl).hostname,
-    label: await trainingLabel(obs),
+    label: await label(obs.req),
     sentAt: now(),
   };
 
@@ -157,17 +150,10 @@ export async function observe(obs: Observation): Promise<void> {
   if ("error" in reply) throw new Error(reply.error);
   if (reply.repliedAt !== undefined) since("hop.workerToSw", reply.repliedAt);
   since("sw.timeToVerdict", obs.timeStamp);
-  // with "canonical", a better source can also overturn a block, which removes its rule
 
   if (reply.rule) {
     applyRule(reply.rule, obs.req, obs.timeStamp);
   }
-}
-
-/** The label the learner trains an observation on, undefined if it must not: no label, or a forgeable source. */
-async function trainingLabel(obs: Observation): Promise<0 | 1 | undefined> {
-  if (!flags.learn.sources.includes(obs.source)) return undefined;
-  return label(obs.req);
 }
 
 /** The URL of the page in a tab. A request that completes right after a navigation gets the new page's URL. */

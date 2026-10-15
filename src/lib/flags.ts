@@ -48,6 +48,8 @@ export const flags = {
     /** Delay before saving changes to storage.session, which batches them. */
     saveMs: 10_000,
   },
+  /** Compares every verdict with EasyList + EasyPrivacy's (src/lib/lists) as lists.* perf counts. Needs perf. */
+  lists: true,
   /** Perf metrics (src/lib/perf), raw in IndexedDB, exported from the popup. */
   perf: {
     /** Adds unlimitedStorage + declarativeNetRequestFeedback (rule hits) permissions. */

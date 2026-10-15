@@ -28,3 +28,6 @@ dist-ssr
 features/target
 features/pkg
 bench/results*.json
+# Filter lists engine (adblock-rust)
+filterlists/target
+filterlists/pkg

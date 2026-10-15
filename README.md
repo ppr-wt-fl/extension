@@ -64,13 +64,13 @@ MV3 webRequest doesn't expose response bodies, so the background downloads them 
 `Observation` (`src/lib/collect`). Its features go to the learner in the offscreen document's worker (`src/offscreen`),
 which classifies it with the next batch and trains on it if it has a label:
 
-| Source       | Where                        | Covers                                  | Body                                                    |
-| ------------ | ---------------------------- | --------------------------------------- | ------------------------------------------------------- |
-| `webRequest` | `src/background/index.ts`    | every request from a tab                | none, for types whose features don't read it            |
-| `refetch`    | `src/background/index.ts`    | GET `script`, `sub_frame`, `main_frame` | downloaded again; cache, cookies and Referer can differ |
-Only sources a page can't forge are used. Page-side capture (a fetch/XHR patch, the frames' `outerHTML`) was
-removed: any script on the page can tamper with it. `chrome.debugger` was removed too: it needs the `debugger`
-permission and shows a banner on every tab.
+| Source                                                                                                         | Where                     | Covers                                  | Body                                                    |
+| -------------------------------------------------------------------------------------------------------------- | ------------------------- | --------------------------------------- | ------------------------------------------------------- |
+| `webRequest`                                                                                                   | `src/background/index.ts` | every request from a tab                | none, for types whose features don't read it            |
+| `refetch`                                                                                                      | `src/background/index.ts` | GET `script`, `sub_frame`, `main_frame` | downloaded again; cache, cookies and Referer can differ |
+| Only sources a page can't forge are used. Page-side capture (a fetch/XHR patch, the frames' `outerHTML`) was   |
+| removed: any script on the page can tamper with it. `chrome.debugger` was removed too: it needs the `debugger` |
+| permission and shows a banner on every tab.                                                                    |
 
 ## Features
 
@@ -206,16 +206,16 @@ check({ url, topLevelUrl, type }); // ["easyprivacy"]: the lists that block it, 
 
 Every `filterlists/data/<name>.txt` becomes a list named `<name>`, with its own engine, so a list's exceptions don't
 apply to the others. Network filters only, matched in the offscreen worker with [adblock-rust](https://github.com/brave/adblock-rust)
-(`filterlists/`). Compared on the 488,810 requests of `robustness-evaluation/dataset/features_raw.csv` in node 
+(`filterlists/`). Compared on the 488,810 requests of `robustness-evaluation/dataset/features_raw.csv` in node
 (V8, network filters only, warm):
 
-|                          | adblock-rust (wasm, deserialized) | adblock-rust (wasm, parsed from text) | @ghostery/adblocker 2.20.1 |
-| ------------------------ | --------------------------------- | ------------------------------------- | -------------------------- |
-| load                     | 13 ms wasm + 35 ms deserialize    | 158 ms                                | 9 ms deserialize           |
-| first match (lazy init)  | 32 ms                             |                                       | 5 ms                       |
-| match mean / p50 / p99   | 13.6 / 11 / 50 µs                 |                                       | 32.8 / 10 / 60 µs          |
-| match max                | 6 ms                              |                                       | 190 ms (data: URLs)        |
-| shipped                  | 2.5 MB wasm + 4.9 MB engine       |                                       | 130 kB JS + 4.3 MB engine  |
+|                         | adblock-rust (wasm, deserialized) | adblock-rust (wasm, parsed from text) | @ghostery/adblocker 2.20.1 |
+| ----------------------- | --------------------------------- | ------------------------------------- | -------------------------- |
+| load                    | 13 ms wasm + 35 ms deserialize    | 158 ms                                | 9 ms deserialize           |
+| first match (lazy init) | 32 ms                             |                                       | 5 ms                       |
+| match mean / p50 / p99  | 13.6 / 11 / 50 µs                 |                                       | 32.8 / 10 / 60 µs          |
+| match max               | 6 ms                              |                                       | 190 ms (data: URLs)        |
+| shipped                 | 2.5 MB wasm + 4.9 MB engine       |                                       | 130 kB JS + 4.3 MB engine  |
 
 The worker outlives the service worker, so matching cost matters more than load. Both engines agree on 99.87% of
 the requests; the rest is mostly Firefox's `beacon` type, which Chrome calls `ping`.
@@ -225,3 +225,4 @@ the requests; the rest is mostly Firefox's `beacon` type, which Chrome calls `pi
 - Seed randomness for tests and offline experiments: make `Reservoir`'s random source injectable (`src/lib/learn`,
   `Math.random` by default) and seed tfjs Dropout. Keep it unseeded in the extension, where a known seed lets a page
   predict which of its samples are replayed.
+- What do we do if we exceed max rules??

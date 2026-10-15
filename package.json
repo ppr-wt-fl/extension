@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "bun run build:features && vitest run",
     "bench": "bun bench/pageload.ts",
-    "build:features": "cargo build --release --target wasm32-unknown-unknown --manifest-path features/Cargo.toml && wasm-bindgen --target web --out-dir features/pkg features/target/wasm32-unknown-unknown/release/adflush_features.wasm"
+    "build:features": "cargo build --release --target wasm32-unknown-unknown --manifest-path features/Cargo.toml && wasm-bindgen --target web --out-dir features/pkg features/target/wasm32-unknown-unknown/release/adflush_features.wasm",
+    "instrumented-chromium": "chromium --remote-debugging-port=9222 --user-data-dir=$HOME/.cache/blocker-chrome --load-extension=$PWD/dist --enable-logging=stderr --v=0"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",

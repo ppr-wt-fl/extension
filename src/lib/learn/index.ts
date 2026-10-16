@@ -230,38 +230,44 @@ export class Trainer {
     }
 
     let total: Tensor[] | undefined;
+    let site: Tensor[] | undefined;
     let loss = 0;
     let busy = 0;
-    for (const group of bySite.values()) {
-      let site: Tensor[] | undefined;
-      for (const slice of chunks(group, this.config.sliceRows)) {
-        await yieldToEvents();
-        this.beforeSlice();
-        const start = now();
-        const result = gradient(
-          this.local,
-          slice.map((r) => r.features),
-          slice.map((r) => r.label),
-          training,
-          this.measureFl,
-        );
-        busy += now() - start;
-        loss += result.loss;
-        site = add(site, result.grads);
-      }
+    // a failed pass or step would leak the gradients summed so far. Disposing twice is a no-op
+    try {
+      for (const group of bySite.values()) {
+        site = undefined;
+        for (const slice of chunks(group, this.config.sliceRows)) {
+          await yieldToEvents();
+          this.beforeSlice();
+          const start = now();
+          const result = gradient(
+            this.local,
+            slice.map((r) => r.features),
+            slice.map((r) => r.label),
+            training,
+            this.measureFl,
+          );
+          busy += now() - start;
+          loss += result.loss;
+          site = add(site, result.grads);
+        }
 
-      if (this.measureFl) {
-        const norm = globalNorm(site!);
-        record("fl.siteGradNorm", norm);
-        record("fl.siteClipped", Number(norm > this.config.siteClip));
+        if (this.measureFl) {
+          const norm = globalNorm(site!);
+          record("fl.siteGradNorm", norm);
+          record("fl.siteClipped", Number(norm > this.config.siteClip));
+        }
+        total = add(total, clip(site!, this.config.siteClip));
       }
-      total = add(total, clip(site!, this.config.siteClip));
+      // the passes only, without the verdicts in between
+      record("learner.train", busy);
+      if (this.measureFl) record("fl.loss", loss / rows.length);
+
+      this.sgd(total!, rows.length);
+    } finally {
+      dispose([...(site ?? []), ...(total ?? [])]);
     }
-    // the passes only, without the verdicts in between
-    record("learner.train", busy);
-    if (this.measureFl) record("fl.loss", loss / rows.length);
-
-    this.sgd(total!, rows.length);
     for (const row of fresh) this.replay.add(row);
 
     this.steps++;

@@ -212,6 +212,20 @@ test("frees its tensors, also with the training metrics", async () => {
   }
 });
 
+test("frees the summed gradients when a step fails", async () => {
+  const l = await learner({ sliceRows: 2 });
+  await trainOn(l, 4);
+  const tensors = memory().numTensors;
+  // fails before the second slice, with the first one's gradients summed
+  let slices = 0;
+  vi.spyOn(l.classifier, "flush").mockImplementation(() => {
+    if (++slices === 2) throw new Error("test");
+  });
+  await trainOn(l, 4, () => "a", 4);
+  expect(slices).toBe(2);
+  expect(memory().numTensors).toBe(tensors);
+});
+
 test("records the training metrics only with measureFl", async () => {
   const names = async () => {
     await new Promise((r) => setTimeout(r));

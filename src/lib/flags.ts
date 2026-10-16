@@ -11,9 +11,13 @@ export const flags = {
      */
     inferWith: "local" as "local" | "global",
     /**
-     * How a model whose layers act differently in training (Dropout, BatchNorm) is trained, see `inspectModes`:
-     * - "inference": as it classifies
-     * - "training": like model.fit
+     * Mode of the training passes, for layers that act differently in training (Dropout, BatchNorm), see
+     * `inspectModes`. Only changes the gradients, not the cost: verdicts always come from a separate inference pass.
+     * - "inference": Dropout off, BatchNorm uses its stored statistics. The gradient is that of the exact function
+     *   that classifies, but without Dropout's regularization the local model can overfit the few rows of a step
+     * - "training": like model.fit, Dropout drops random units (AdFlush: 0.2, 0.5 before the output), so each
+     *   gradient is noisier but regularized. BatchNorm would use and update the batch's statistics, which FedAvg
+     *   updates leave out
      */
     trainMode: "inference" as "inference" | "training",
     /** Inference: a batch is classified when it has this many requests, */

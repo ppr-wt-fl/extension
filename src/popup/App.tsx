@@ -53,7 +53,7 @@ async function download() {
   return lastKey;
 }
 
-/** Turns blocking on the active tab's site off or on, then reloads the tab so it applies. */
+/** Turns blocking on the active tab's site off or on, then offers to reload the tab so it applies. */
 function SiteToggle() {
   const [tab, setTab] = useState<chrome.tabs.Tab>();
   const [disabledStatus, setDisabledStatus] = useState<boolean>();
@@ -86,7 +86,8 @@ function SiteToggle() {
         onClick={async () => {
           await setSiteDisabled(host, !disabledStatus);
           setDisabledStatus(!disabledStatus);
-          chrome.tabs.reload(tab!.id!);
+          if (confirm("Reload the page to apply?"))
+            chrome.tabs.reload(tab!.id!);
         }}
       >
         turn {disabledStatus ? "on" : "off"}

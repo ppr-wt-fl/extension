@@ -28,6 +28,8 @@ export function initSink(name: string, delay = flags.perf.flushMs) {
 }
 
 export function record(name: string, value: number) {
+  if (sink === undefined) throw new Error("perf sink not initialized");
+
   if (!flags.perf.enabled) return;
   if (buffer.length >= flags.perf.maxBuffer) buffer.shift();
   buffer.push([name, value, now()]);

@@ -14,7 +14,7 @@ import { flags } from "@/lib/flags";
 import type { RequestInfo } from "@/lib/features";
 import { Learner } from "@/lib/learn";
 import { listsWasmBytes, loadLists } from "@/lib/lists";
-import { inputSize, loadModel, THRESHOLD } from "@/model";
+import { inputSize, loadModel, THRESHOLD, transposeFreeMatMul } from "@/model";
 import { logger } from "@/lib/log";
 import { count, gauge, now, initSink, record, since } from "@/lib/perf";
 import { writeMeta } from "@/lib/perf/outbox";
@@ -114,6 +114,7 @@ const learnerPromise = (async () => {
   });
   // TODO: maybe pick the best backend possible
   await setBackend("wasm");
+  transposeFreeMatMul();
   // HEAPU8 is replaced when the memory grows, so read through the module each time
   tfWasm = (findBackend("wasm") as BackendWasm | null)?.wasm as
     | { HEAPU8: Uint8Array }

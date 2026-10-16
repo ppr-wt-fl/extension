@@ -1,9 +1,24 @@
 import { readFileSync } from "node:fs";
-import { io, layers, sequential, setBackend } from "@tensorflow/tfjs";
+import {
+  io,
+  layers,
+  matMul,
+  memory,
+  randomNormal,
+  sequential,
+  setBackend,
+  tidy,
+} from "@tensorflow/tfjs";
 import "@tensorflow/tfjs-backend-wasm";
 import { beforeAll, expect, test } from "vitest";
 import { presets } from "@/lib/features";
-import { inspectModes, loadModel, predict, THRESHOLD } from ".";
+import {
+  inspectModes,
+  loadModel,
+  predict,
+  THRESHOLD,
+  transposeFreeMatMul,
+} from ".";
 
 console.warn(`Using a decission threshold of ${THRESHOLD}`);
 
@@ -29,6 +44,7 @@ const adflush = () =>
 
 beforeAll(async () => {
   await setBackend("wasm");
+  transposeFreeMatMul();
 });
 
 test("feature order matches the preset", () => {
@@ -98,5 +114,39 @@ test("inspectModes finds layers that act differently in training", async () => {
   // the training-mode probe must not change the BatchNorm statistics
   normalized.nonTrainableWeights.forEach((w, i) =>
     expect([...w.read().dataSync()]).toEqual([...before[i]]),
+  );
+});
+
+test("transposeFreeMatMul matches the cpu backend for every transpose flag", async () => {
+  // a · b is [2, 3, 5] for each combination of flags
+  const cases = [false, true].flatMap((transposeA) =>
+    [false, true].map((transposeB) => ({
+      a: randomNormal(transposeA ? [2, 4, 3] : [2, 3, 4]).arraySync(),
+      b: randomNormal(transposeB ? [2, 5, 4] : [2, 4, 5]).arraySync(),
+      transposeA,
+      transposeB,
+    })),
+  );
+  const products = () =>
+    cases.map(({ a, b, transposeA, transposeB }) =>
+      tidy(() =>
+        matMul(
+          a as number[][][],
+          b as number[][][],
+          transposeA,
+          transposeB,
+        ).dataSync(),
+      ),
+    );
+
+  await setBackend("cpu");
+  const expected = products();
+  await setBackend("wasm");
+  transposeFreeMatMul();
+  const tensors = memory().numTensors;
+  const actual = products();
+  expect(memory().numTensors).toBe(tensors);
+  actual.forEach((out, i) =>
+    out.forEach((v, j) => expect(v).toBeCloseTo(expected[i][j], 5)),
   );
 });

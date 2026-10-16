@@ -3,7 +3,7 @@ import { io, memory, setBackend } from "@tensorflow/tfjs";
 import "@tensorflow/tfjs-backend-wasm";
 import { beforeAll, expect, test, vi } from "vitest";
 import { flags } from "@/lib/flags";
-import { loadModel, predict, THRESHOLD } from "@/model";
+import { loadModel, predict, THRESHOLD, transposeFreeMatMul } from "@/model";
 import { initSink, type Sample } from "@/lib/perf";
 import { Learner, Reservoir, type LearnConfig } from ".";
 
@@ -27,6 +27,7 @@ const flipped = (i: number) =>
 
 beforeAll(async () => {
   await setBackend("wasm");
+  transposeFreeMatMul();
   initSink("test", 0);
 });
 

@@ -1,17 +1,23 @@
 import {
   dispose,
+  getKernel,
   io,
   loadLayersModel,
   losses,
   randomNormal,
   Reduction,
+  registerKernel,
   tensor2d,
   tidy,
+  unregisterKernel,
   variableGrads,
+  type KernelBackend,
+  type KernelFunc,
   type LayersModel,
   type Scalar,
   type Tensor,
   type Tensor2D,
+  type TensorInfo,
   type Variable,
 } from "@tensorflow/tfjs";
 
@@ -133,4 +139,53 @@ export function gradient(
   });
 
   return { grads, probabilities, loss };
+}
+
+let patched = false;
+
+/**
+ * Makes the wasm backend's BatchMatMul transpose its inputs first instead of passing transpose flags: only
+ * untransposed products take XNNPACK, the others a naive loop, ~90% of a backward pass (dW = xᵀ·dy, dx = dy·Wᵀ).
+ * Call once after setBackend("wasm"); later calls do nothing.
+ */
+export function transposeFreeMatMul(): void {
+  const original = getKernel("BatchMatMul", "wasm");
+  if (!original || patched) return;
+  const transpose = getKernel("Transpose", "wasm").kernelFunc as KernelFunc;
+  patched = true;
+
+  const kernelFunc: KernelFunc = ({ inputs, backend, attrs }) => {
+    const { a, b } = inputs as { a: TensorInfo; b: TensorInfo };
+    const { transposeA, transposeB } = attrs as {
+      transposeA: boolean;
+      transposeB: boolean;
+    };
+    const temporary: TensorInfo[] = [];
+    const untransposed = (x: TensorInfo, transposed: boolean) => {
+      if (!transposed) return x;
+      const perm = [...x.shape.keys()];
+      perm.push(...perm.splice(-2).reverse());
+      const t = transpose({
+        inputs: { x },
+        backend,
+        attrs: { perm },
+      }) as TensorInfo;
+      temporary.push(t);
+      return t;
+    };
+    const out = original.kernelFunc({
+      inputs: {
+        ...inputs,
+        a: untransposed(a, transposeA),
+        b: untransposed(b, transposeB),
+      },
+      backend,
+      attrs: { ...attrs, transposeA: false, transposeB: false },
+    });
+    for (const t of temporary) (backend as KernelBackend).disposeData(t.dataId);
+    return out;
+  };
+
+  unregisterKernel("BatchMatMul", "wasm");
+  registerKernel({ ...original, kernelFunc });
 }

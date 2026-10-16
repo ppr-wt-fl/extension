@@ -12,7 +12,7 @@ import tfSimdUrl from "@tensorflow/tfjs-backend-wasm/dist/tfjs-backend-wasm-simd
 import type { Source } from "@/lib/collect";
 import { flags } from "@/lib/flags";
 import type { RequestInfo } from "@/lib/features";
-import { Learner } from "@/lib/learn";
+import { Classifier, Trainer } from "@/lib/learn";
 import { listsWasmBytes, loadLists } from "@/lib/lists";
 import { inputSize, loadModel, THRESHOLD, transposeFreeMatMul } from "@/model";
 import { logger } from "@/lib/log";
@@ -63,7 +63,7 @@ export type LearnerReply =
 initSink("worker");
 const log = logger("worker");
 
-let learner: Learner | undefined;
+let learner: { classifier: Classifier; trainer: Trainer } | undefined;
 /** The tfjs-wasm emscripten module, set once its backend is ready. HEAPU8: untyped without @types/emscripten */
 let tfWasm: { HEAPU8: Uint8Array } | undefined;
 
@@ -77,7 +77,10 @@ if (flags.perf.enabled) {
       // growing = leak
       gauge("tf.numTensors", tf.numTensors);
       gauge("tf.numBytes", tf.numBytes);
-      for (const [k, v] of Object.entries(learner?.sizes() ?? {}))
+      for (const [k, v] of Object.entries({
+        ...learner?.classifier.sizes(),
+        ...learner?.trainer.sizes(),
+      }))
         gauge(`learner.${k}`, v);
       // wasm linear memory: only grows, not in the JS heap. performance.memory is Window-only, so no heap here
       // (measureUserAgentSpecificMemory needs cross-origin isolation, which the extension isn't)
@@ -139,7 +142,12 @@ const learnerPromise = (async () => {
   record("model.jsonBytes", new Blob([JSON.stringify(json)]).size);
 
   start = now();
-  learner = new Learner(global, local);
+  // every training slice first classifies the waiting requests
+  const trainer = new Trainer(global, local, flags.learn, () =>
+    classifier.flush(),
+  );
+  const classifier = new Classifier(global, local, trainer);
+  learner = { classifier, trainer };
   since("startup.learner", start);
   since("startup.total", startupStart);
   log.info(`learner ready in ${(now() - startupStart).toFixed(0)}ms`);
@@ -195,13 +203,14 @@ self.onmessage = async ({
 
   try {
     // TODO: puts us at the end of the eventQueue, suboptimal
-    const learner = await learnerPromise;
+    const { classifier, trainer } = await learnerPromise;
 
-    const probability = await learner.submit({
-      features: Float64Array.from(message.features),
-      site: message.site,
-      label: message.label,
-    });
+    const features = Float64Array.from(message.features);
+    const verdict = classifier.submit(features);
+    if (message.label !== undefined) {
+      void trainer.add({ features, site: message.site, label: message.label });
+    }
+    const probability = await verdict;
 
     const block = probability >= THRESHOLD;
     log.trace(

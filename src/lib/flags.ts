@@ -6,35 +6,38 @@ export const flags = {
   learn: {
     /**
      * Which weights classify:
-     * - "local": the model being trained, so the batch's single forward pass both classifies and trains
-     * - "global": the round's starting weights, which costs a second forward pass once the local model has moved
+     * - "local": the model being trained
+     * - "global": the round's starting weights
      */
     inferWith: "local" as "local" | "global",
     /**
      * How a model whose layers act differently in training (Dropout, BatchNorm) is trained, see `inspectModes`:
-     * - "inference": as it classifies, so the training pass also gives the verdicts
-     * - "training": like model.fit, the verdicts then need a second, inference-mode pass
+     * - "inference": as it classifies
+     * - "training": like model.fit
      */
     trainMode: "inference" as "inference" | "training",
-    /** A batch is classified and trained on when it has this many requests, */
+    /** Inference: a batch is classified when it has this many requests, */
     batchSize: 500,
     /** or this long after its first request arrived. Compute is ~2-5 ms per batch, so longer barely batches more. */
     idleMs: 20,
+    /** Labeled rows per SGD step; rows short of a step wait for more, and are lost when the session ends. */
+    stepRows: 64,
+    /** Rows per forward/backward pass, ~0.9 ms each. Waiting requests are classified between slices, so ~30 ms max wait. */
+    sliceRows: 32,
+    /** Mean-gradient SGD (summed loss / rows), and site clipping already bounds each step: a plain small step size. */
     learningRate: 0.01,
-    /** Share of each batch's training rows that are replayed from earlier batches, against drifting to one site. */
+    /** Share of each step's rows that are replayed from earlier steps, against drifting to one site. */
     replayFraction: 0.15,
     /** Samples kept for replay, by reservoir sampling over every trained sample. */
     replayCapacity: 5000,
     /** Training samples per top-level site and round, so one page can't fill a round with its requests. */
     perSiteLimit: 100,
-    /** L2 norm each site's summed gradient in a batch is clipped to, so one page can only move a step so far. */
+    /** L2 norm each site's summed gradient in a step is clipped to, so one page can only move a step so far. */
     siteClip: 1,
-    /** Rows per forward/backward pass. Events run between chunks, so smaller chunks keep the worker responsive. */
-    chunkSize: 50,
     /** L2 norm the round's update (local - global) is clipped to before it is sent. */
     updateClip: 10,
-    /** SGD steps (batches with training rows) per round. */
-    roundSteps: 50,
+    /** SGD steps per round: ~1300 fresh rows, at most 100 per site (perSiteLimit), so a round spans >= 13 sites. */
+    roundSteps: 20,
   },
   /** Skipping requests already classified "allow" (src/background/checked.ts). */
   cache: {

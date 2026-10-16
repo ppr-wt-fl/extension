@@ -14,24 +14,17 @@ const log = logger("learn");
 
 export type LearnConfig = typeof flags.learn;
 
-/** A request to classify, and to train on if it has a label. */
+/** A labeled request to train on. */
 export interface Sample {
   features: Float64Array;
   /** Top-level site: gradients are clipped per site, and limited to `perSiteLimit` samples per round */
   site: string;
-  /** 1 to block, 0 to allow, undefined to only classify */
-  label?: 0 | 1;
-}
-
-/** A sample being trained on. */
-interface Row extends Sample {
+  /** 1 to block, 0 to allow */
   label: 0 | 1;
-  /** Position in the flushed queue, undefined for replayed rows */
-  index?: number;
 }
 
 interface Pending {
-  sample: Sample;
+  features: Float64Array;
   /** `now()` at submit */
   submittedAt: number;
   resolve(probability: number): void;
@@ -53,18 +46,107 @@ const logUpdate: SendUpdate = (update) => {
   );
 };
 
-/**
- * Batches requests, classifies them, and takes one SGD step on each batch's labeled rows (plus replayed ones).
- * The forward pass that computes a row's gradient also classifies it when the weights and mode allow it.
- * Every `roundSteps` steps it sends the clipped local - global update and starts over from global.
- * Everything is in memory (src/offscreen/worker.ts): lost when the browser or the extension restarts.
- */
-export class Learner {
+/** Batches requests and classifies each batch with one forward pass. */
+export class Classifier {
   private queue: Pending[] = [];
   private timer: ReturnType<typeof setTimeout> | undefined;
+
+  /** `trainer` tells whether the local model has moved away from global this round. */
+  constructor(
+    private readonly global: LayersModel,
+    private readonly local: LayersModel,
+    private readonly trainer: { readonly steps: number },
+    private readonly config: LearnConfig = flags.learn,
+    /** fl.* metrics, flags.perf.fl. */
+    private readonly measureFl = flags.perf.enabled && flags.perf.fl,
+  ) {}
+
+  /** Block probability of the features, once their batch is classified. */
+  submit(features: Float64Array): Promise<number> {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ features, resolve, reject, submittedAt: now() });
+
+      // queue handling (deadline from the first queued request + max capacity). Not re-armed per request: in a
+      // burst that would hold the batch until traffic stops
+      if (this.queue.length >= this.config.batchSize) {
+        this.flush();
+      } else if (this.timer === undefined) {
+        this.timer = setTimeout(() => this.flush(), this.config.idleMs);
+      }
+    });
+  }
+
+  /** Classifies the queued requests. */
+  flush(): void {
+    clearTimeout(this.timer);
+    this.timer = undefined;
+    const queued = this.queue.splice(0);
+    if (!queued.length) return;
+
+    // incl. idleMs + training slices
+    for (const { submittedAt } of queued)
+      since("learner.queueWait", submittedAt);
+    record("learner.batchSize", queued.length);
+    const features = queued.map((p) => p.features);
+
+    try {
+      let model = this.local;
+      if (this.config.inferWith === "global") model = this.global;
+      const start = now();
+      const probabilities = predict(model, features);
+      since("learner.infer", start);
+      queued.forEach((p, i) => p.resolve(probabilities[i]));
+
+      // before the first step local and global are the same
+      if (this.measureFl && this.trainer.steps > 0) {
+        this.disagreement(features, probabilities);
+      }
+    } catch (error) {
+      // rejecting after the verdicts resolved does nothing, e.g. failed metrics
+      log.error(error);
+      count("learner.batchFailed");
+      for (const p of queued) p.reject(error);
+    }
+  }
+
+  /** State sizes, for perf. */
+  sizes(): Record<string, number> {
+    return { queue: this.queue.length };
+  }
+
+  /** Local vs global verdict disagreement on this batch. Costs a forward pass. */
+  private disagreement(
+    features: Float64Array[],
+    probabilities: Float32Array,
+  ): void {
+    let model = this.global;
+    if (this.config.inferWith === "global") model = this.local;
+    const other = predict(model, features);
+    let flipped = 0;
+    let diff = 0;
+    other.forEach((q, i) => {
+      const p = probabilities[i];
+      if (p >= THRESHOLD !== q >= THRESHOLD) flipped++;
+      diff += Math.abs(p - q);
+    });
+    record("fl.disagreement", flipped / features.length);
+    record("fl.probabilityDiff", diff / features.length);
+  }
+}
+
+/**
+ * Buffers labeled samples and takes one SGD step on every `stepRows` of them (plus replayed ones), in slices of
+ * `sliceRows` rows with `beforeSlice` (classifying the waiting requests) before each.
+ * Every `roundSteps` steps it sends the clipped local - global update and starts over from global.
+ * Everything is in memory (src/offscreen/worker.ts): lost when the browser or the extension restarts, so are the
+ * buffered rows short of a step.
+ */
+export class Trainer {
+  private buffer: Sample[] = [];
   private running = Promise.resolve();
-  private readonly replay: Reservoir<Row>;
-  private steps = 0;
+  private readonly replay: Reservoir<Sample>;
+  /** SGD steps this round */
+  steps = 0;
   private perSite = new Map<string, number>();
   private trained = new Set<string>();
   /** Round start, `now()` */
@@ -78,6 +160,7 @@ export class Learner {
     private readonly global: LayersModel,
     private readonly local: LayersModel,
     private readonly config: LearnConfig = flags.learn,
+    private readonly beforeSlice: () => void = () => {},
     private readonly sendUpdate: SendUpdate = logUpdate,
     /** fl.* metrics, flags.perf.fl. Some need a backend sync. */
     private readonly measureFl = flags.perf.enabled && flags.perf.fl,
@@ -100,51 +183,27 @@ export class Learner {
     }
   }
 
-  /** Submit samples for inference and training */
-  submit(sample: Sample): Promise<number> {
-    return new Promise((resolve, reject) => {
-      // add to queue
-      this.queue.push({ sample, resolve, reject, submittedAt: now() });
-
-      // clearTimeout(this.timer);
-
-      // queue handling (deadline from the first queued request + max capacity). Not re-armed per request: in a
-      // burst that would hold the batch until traffic stops
-      if (this.queue.length >= this.config.batchSize) {
-        this.flush();
-        // } else {
-      } else if (this.timer === undefined) {
-        this.timer = setTimeout(() => this.flush(), this.config.idleMs);
-      }
-    });
-  }
-
-  /** Classifies and trains on the queued requests, after the batches before them. */
-  flush(): Promise<void> {
-    clearTimeout(this.timer);
-    this.timer = undefined;
-    const queued = this.queue.splice(0);
-
-    this.running = this.running.then(async () => {
-      try {
-        await this.run(queued);
-      } catch (error) {
-        // rejecting after the verdicts resolved does nothing, e.g. a failed SGD step
-        log.error(error);
-        count("learner.batchFailed");
-        for (const sample of queued) {
-          sample.reject(error);
+  /** Buffers the sample if admitted. Resolves once the steps it started, and those before, are done. */
+  add(sample: Sample): Promise<void> {
+    if (this.admit(sample)) this.buffer.push(sample);
+    if (this.buffer.length >= this.config.stepRows) {
+      const fresh = this.buffer.splice(0, this.config.stepRows);
+      this.running = this.running.then(async () => {
+        try {
+          await this.step(fresh);
+        } catch (error) {
+          log.error(error);
+          count("learner.stepFailed");
         }
-      }
-    });
-
+      });
+    }
     return this.running;
   }
 
   /** State sizes, for perf. */
   sizes(): Record<string, number> {
     return {
-      queue: this.queue.length,
+      buffer: this.buffer.length,
       replay: this.replay.items.length,
       trained: this.trained.size,
       perSite: this.perSite.size,
@@ -152,86 +211,18 @@ export class Learner {
     };
   }
 
-  private async run(queued: Pending[]): Promise<void> {
-    const batchStart = now();
-    // incl. idleMs + earlier batches
-    for (const { submittedAt } of queued)
-      since("learner.queueWait", submittedAt);
-    record("learner.batchSize", queued.length);
-
-    const fresh: Row[] = [];
-    queued.forEach(({ sample }, index) => {
-      if (sample.label !== undefined && this.admit(sample)) {
-        fresh.push({ ...sample, label: sample.label, index });
-      }
-    });
+  private async step(fresh: Sample[]): Promise<void> {
+    const stepStart = now();
     const fraction = this.config.replayFraction;
     const replayed = this.replay.sample(
       Math.round((fresh.length * fraction) / (1 - fraction)),
     );
     const rows = [...fresh, ...replayed];
-
-    // after the first step the local weights have moved away from global
-    const useGlobal = this.config.inferWith === "global" && this.steps > 0;
-    const training = this.config.trainMode === "training";
-    // the training pass classifies the fresh rows, unless dropout etc. made it noisy or it ran the wrong weights
-    const reusePass = !useGlobal && !(training && this.modes.modeDependent);
-
-    const probabilities = new Float32Array(queued.length).fill(NaN);
-    const trained = await this.train(rows, training, reusePass, probabilities);
-
-    let classifier = this.local;
-    if (useGlobal) classifier = this.global;
-    const unclassified = [...probabilities.keys()].filter((i) =>
-      Number.isNaN(probabilities[i]),
-    );
-    const start = now();
-    const predicted = await this.predict(
-      classifier,
-      unclassified.map((i) => queued[i].sample.features),
-    );
-    unclassified.forEach((queueIndex, i) => {
-      probabilities[queueIndex] = predicted[i];
-    });
-    if (unclassified.length) since("learner.infer", start);
-
-    queued.forEach((p, i) => p.resolve(probabilities[i]));
-
-    if (this.measureFl && this.steps > 0) {
-      await this.disagreement(queued, probabilities);
-    }
-
-    // no training rows: nothing to update
-    if (!trained) return;
-
-    this.step(trained.total, rows.length);
-    // replayed rows are stored without their position in this batch's queue
-    for (const row of fresh) this.replay.add({ ...row, index: undefined });
-
-    this.steps++;
-    this.roundRows += rows.length;
-    log.debug(
-      `step ${this.steps}/${this.config.roundSteps}: ${queued.length} requests, ${fresh.length} + ${replayed.length} replayed rows, loss ${(trained.loss / rows.length).toFixed(4)}`,
-    );
-    since("learner.batch", batchStart);
-    if (this.steps >= this.config.roundSteps) this.endRound();
-  }
-
-  /**
-   * Sum of the rows' gradients, clipped per site; undefined without rows.
-   * With `reusePass`, writes the fresh rows' probabilities from the same forward pass.
-   */
-  private async train(
-    rows: Row[],
-    training: boolean,
-    reusePass: boolean,
-    probabilities: Float32Array,
-  ): Promise<{ total: Tensor[]; loss: number } | undefined> {
-    if (!rows.length) return undefined;
     record("learner.trainRows", rows.length);
-    const start = now();
+    const training = this.config.trainMode === "training";
 
-    const bySite = new Map<string, Row[]>();
+    // replayed rows join their site's group, so it is clipped as one
+    const bySite = new Map<string, Sample[]>();
     for (const row of rows) {
       const group = bySite.get(row.site);
       if (group) group.push(row);
@@ -240,25 +231,23 @@ export class Learner {
 
     let total: Tensor[] | undefined;
     let loss = 0;
+    let busy = 0;
     for (const group of bySite.values()) {
       let site: Tensor[] | undefined;
-      for (const chunk of chunks(group, this.config.chunkSize)) {
+      for (const slice of chunks(group, this.config.sliceRows)) {
+        await yieldToEvents();
+        this.beforeSlice();
+        const start = now();
         const result = gradient(
           this.local,
-          chunk.map((r) => r.features),
-          chunk.map((r) => r.label),
+          slice.map((r) => r.features),
+          slice.map((r) => r.label),
           training,
           this.measureFl,
         );
+        busy += now() - start;
         loss += result.loss;
-        if (reusePass) {
-          chunk.forEach(({ index }, i) => {
-            if (index !== undefined)
-              probabilities[index] = result.probabilities[i];
-          });
-        }
         site = add(site, result.grads);
-        await yieldToEvents();
       }
 
       if (this.measureFl) {
@@ -268,14 +257,24 @@ export class Learner {
       }
       total = add(total, clip(site!, this.config.siteClip));
     }
-
-    since("learner.train", start);
+    // the passes only, without the verdicts in between
+    record("learner.train", busy);
     if (this.measureFl) record("fl.loss", loss / rows.length);
-    return { total: total!, loss };
+
+    this.sgd(total!, rows.length);
+    for (const row of fresh) this.replay.add(row);
+
+    this.steps++;
+    this.roundRows += rows.length;
+    log.debug(
+      `step ${this.steps}/${this.config.roundSteps}: ${fresh.length} + ${replayed.length} replayed rows, loss ${(loss / rows.length).toFixed(4)}`,
+    );
+    since("learner.batch", stepStart);
+    if (this.steps >= this.config.roundSteps) this.endRound();
   }
 
   /** SGD step: weight -= learningRate * summed (site-clipped) gradient / rows. Disposes `total`. */
-  private step(total: Tensor[], rows: number): void {
+  private sgd(total: Tensor[], rows: number): void {
     const stepSize = this.config.learningRate / rows;
     this.local.trainableWeights.forEach((weight, i) => {
       const updated = tidy(() => weight.read().sub(total[i].mul(stepSize)));
@@ -283,43 +282,6 @@ export class Learner {
       updated.dispose();
     });
     dispose(total);
-  }
-
-  /** `predict` in chunks, yielding between them. */
-  private async predict(
-    model: LayersModel,
-    features: Float64Array[],
-  ): Promise<Float32Array> {
-    const out = new Float32Array(features.length);
-    let offset = 0;
-    for (const chunk of chunks(features, this.config.chunkSize)) {
-      out.set(predict(model, chunk), offset);
-      offset += chunk.length;
-      await yieldToEvents();
-    }
-    return out;
-  }
-
-  /** Local vs global verdict disagreement on this batch. Costs a forward pass. */
-  private async disagreement(
-    queued: Pending[],
-    probabilities: Float32Array,
-  ): Promise<void> {
-    let model = this.global;
-    if (this.config.inferWith === "global") model = this.local;
-    const other = await this.predict(
-      model,
-      queued.map((p) => p.sample.features),
-    );
-    let flipped = 0;
-    let diff = 0;
-    other.forEach((q, i) => {
-      const p = probabilities[i];
-      if (p >= THRESHOLD !== q >= THRESHOLD) flipped++;
-      diff += Math.abs(p - q);
-    });
-    record("fl.disagreement", flipped / queued.length);
-    record("fl.probabilityDiff", diff / queued.length);
   }
 
   /**
@@ -352,7 +314,7 @@ export class Learner {
     return true;
   }
 
-  /** Sends the clipped update and resets the local model to the global one. */
+  /** Sends the clipped update and resets the local model to the global one. Buffered rows train next round. */
   endRound(): void {
     const update = tidy(() => {
       const deltas = this.local.trainableWeights.map((w, i) =>
@@ -425,10 +387,7 @@ function chunks<T>(items: T[], size: number): T[][] {
   );
 }
 
-/**
- * Lets queued messages run between chunks, as tfjs passes block the thread.
- * NOTE: likely unneeded in the worker (src/offscreen/worker.ts): its messages only queue, and wait for this batch anyway.
- */
+/** Lets requests arrive between training slices, so `beforeSlice` classifies them: tfjs passes block the thread. */
 function yieldToEvents(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve));
 }

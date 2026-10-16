@@ -18,8 +18,8 @@ export const flags = {
     trainMode: "inference" as "inference" | "training",
     /** A batch is classified and trained on when it has this many requests, */
     batchSize: 500,
-    /** or no request arrived for this long. */
-    idleMs: 100,
+    /** or this long after its first request arrived. Compute is ~2-5 ms per batch, so longer barely batches more. */
+    idleMs: 20,
     learningRate: 0.01,
     /** Share of each batch's training rows that are replayed from earlier batches, against drifting to one site. */
     replayFraction: 0.15,

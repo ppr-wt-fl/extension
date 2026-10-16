@@ -106,11 +106,14 @@ export class Learner {
       // add to queue
       this.queue.push({ sample, resolve, reject, submittedAt: now() });
 
-      // queue handling (idle time + max capacity)
-      clearTimeout(this.timer);
+      // clearTimeout(this.timer);
+
+      // queue handling (deadline from the first queued request + max capacity). Not re-armed per request: in a
+      // burst that would hold the batch until traffic stops
       if (this.queue.length >= this.config.batchSize) {
         this.flush();
-      } else {
+        // } else {
+      } else if (this.timer === undefined) {
         this.timer = setTimeout(() => this.flush(), this.config.idleMs);
       }
     });
@@ -119,6 +122,7 @@ export class Learner {
   /** Classifies and trains on the queued requests, after the batches before them. */
   flush(): Promise<void> {
     clearTimeout(this.timer);
+    this.timer = undefined;
     const queued = this.queue.splice(0);
 
     this.running = this.running.then(async () => {

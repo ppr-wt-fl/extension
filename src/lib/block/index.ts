@@ -100,6 +100,9 @@ export function rule(id: number, req: RequestInfo): Rule {
  * `MAX_RULES`, which older versions with fewer allow rules filled up to.
  */
 export async function installedRules(): Promise<{ key: string; id: number }[]> {
+  // a resync after a failed update must not read rules an update queued before it is about to change
+  await flush?.catch(() => {});
+  await updating;
   const all = await chrome.declarativeNetRequest.getDynamicRules();
   const own = all.filter((r) =>
     isOwnUrl(r.condition.urlFilter?.slice(1) ?? ""),
@@ -213,19 +216,21 @@ export async function setSiteDisabled(
 const pending = new Map<number, Rule | null>();
 /** Queue + observe time (epoch ms) of pending adds, for perf. */
 const queuedAt = new Map<number, { queued: number; observed: number }>();
-let scheduled = false;
+/** The update the queued changes go into, until it takes them. */
+let flush: Promise<void> | undefined;
 let updating = Promise.resolve();
 
 /**
  * Queues a rule change. Changes are sent together once the current task ends, one update at a time: changes queued
  * during an update go into the next one, since each update re-indexes every rule.
  * `observedAt`: `Observation.timeStamp`, for time to rule.
+ * Resolves once the change's update is done, rejects if it failed: then the worker's rules are out of sync with Chrome's.
  */
 export function applyRule(
   change: RuleChange,
   req: RequestInfo,
   observedAt: number,
-): void {
+): Promise<void> {
   pending.set(change.id, change.action === "add" ? rule(change.id, req) : null);
   if (change.evict !== undefined) {
     pending.set(change.evict, null);
@@ -235,40 +240,38 @@ export function applyRule(
     queuedAt.set(change.id, { queued: now(), observed: observedAt });
   else queuedAt.delete(change.id);
 
-  if (scheduled) return;
-  scheduled = true;
-
   // We push the flush to the back of the js task queue
   // so that all rule changes that come before it can be processed
-  setTimeout(() => {
-    updating = updating
-      .then(() => {
-        // taken once the previous update is done, so everything queued meanwhile goes in one call
-        scheduled = false;
-        const batch = [...pending];
-        // removeAllRules emptied the queue
-        if (!batch.length) return;
-        log.debug("rule update", batch);
-        const times = [...queuedAt.values()];
-        pending.clear();
-        queuedAt.clear();
-        count("sw.ruleUpdate");
-        return chrome.declarativeNetRequest
-          .updateDynamicRules({
-            // removing first lets an add replace a rule with the same id; unknown ids are ignored
-            removeRuleIds: batch.map(([id]) => id),
-            addRules: batch.flatMap(([, r]) => (r ? [r] : [])),
-          })
-          .then(() => {
-            for (const { queued, observed } of times) {
-              since("sw.ruleFlush", queued);
-              // until here, repeats still load
-              since("sw.timeToRule", observed);
-            }
-          });
-      })
-      .catch(log.error);
+  flush ??= new Promise((resolve) => setTimeout(resolve)).then(() => {
+    const update = updating.then(() => {
+      // taken once the previous update is done, so everything queued meanwhile goes in one call
+      flush = undefined;
+      const batch = [...pending];
+      // removeAllRules emptied the queue
+      if (!batch.length) return;
+      log.debug("rule update", batch);
+      const times = [...queuedAt.values()];
+      pending.clear();
+      queuedAt.clear();
+      count("sw.ruleUpdate");
+      return chrome.declarativeNetRequest
+        .updateDynamicRules({
+          // removing first lets an add replace a rule with the same id; unknown ids are ignored
+          removeRuleIds: batch.map(([id]) => id),
+          addRules: batch.flatMap(([, r]) => (r ? [r] : [])),
+        })
+        .then(() => {
+          for (const { queued, observed } of times) {
+            since("sw.ruleFlush", queued);
+            // until here, repeats still load
+            since("sw.timeToRule", observed);
+          }
+        });
+    });
+    updating = update.catch(log.error);
+    return update;
   });
+  return flush;
 }
 
 /** Drops the queued changes and removes every installed block rule, after the update running now. */

@@ -85,6 +85,24 @@ test('applyRule sends changes queued during an update in one next update', async
   await tick()
   expect(updateDynamicRules).toHaveBeenCalledTimes(2)
   expect(updateDynamicRules).toHaveBeenLastCalledWith({ removeRuleIds: [2, 3], addRules: [rule(2, req)] })
+  // installedRules waits for the running update
+  finish()
+})
+
+test('applyRule rejects every change of a failed update, the next update still runs', async () => {
+  const updateDynamicRules = vi.fn().mockRejectedValueOnce(new Error('bad rule')).mockResolvedValue(undefined)
+  vi.stubGlobal('chrome', {
+    runtime,
+    declarativeNetRequest: { RuleActionType: { BLOCK: 'block' }, updateDynamicRules },
+  })
+  vi.resetModules()
+  const { applyRule } = await import('.')
+  const first = applyRule({ action: 'add', id: 1 }, req, 0)
+  const second = applyRule({ action: 'add', id: 2 }, req, 0)
+  await expect(first).rejects.toThrow('bad rule')
+  await expect(second).rejects.toThrow('bad rule')
+  await expect(applyRule({ action: 'add', id: 3 }, req, 0)).resolves.toBeUndefined()
+  expect(updateDynamicRules).toHaveBeenCalledTimes(2)
 })
 
 test('siteDisabled matches the site and its subdomains only', () => {

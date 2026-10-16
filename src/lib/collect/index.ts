@@ -190,7 +190,8 @@ export async function observe(obs: Observation): Promise<boolean> {
   since("sw.timeToVerdict", obs.timeStamp);
 
   if (reply.rule) {
-    applyRule(reply.rule, obs.req, obs.timeStamp);
+    // the worker already counts the change as installed: on failure, give it Chrome's rules again
+    applyRule(reply.rule, obs.req, obs.timeStamp).catch(restoreAgain);
   }
 
   return reply.block === true;

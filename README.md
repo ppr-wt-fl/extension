@@ -1,3 +1,7 @@
+> [!CAUTION]
+> Don't read this horrible README
+> Go here[TESTERS.md](TESTERS.md)
+
 # Blocker extension
 
 Testers: see [TESTERS.md](TESTERS.md) for installing, using and exporting logs.
@@ -89,9 +93,9 @@ MV3 webRequest doesn't expose response bodies, so the background downloads them 
 `Observation` (`src/lib/collect`). Its features go to the learner in the offscreen document's worker (`src/offscreen`),
 which classifies it with the next batch and trains on it if it has a label:
 
-| Source                                                                                                         | Where                     | Covers                                  | Body                                                    |
-| -------------------------------------------------------------------------------------------------------------- | ------------------------- | --------------------------------------- | ------------------------------------------------------- |
-| `webRequest`                                                                                                   | `src/background/index.ts` | every request from a tab                | none, for types whose features don't read it            |
+| Source                                                                                                         | Where                       | Covers                                  | Body                                                                            |
+| -------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------- | ------------------------------------------------------------------------------- |
+| `webRequest`                                                                                                   | `src/background/index.ts`   | every request from a tab                | none, for types whose features don't read it                                    |
 | `refetch`                                                                                                      | `src/background/refetch.ts` | GET `script`, `sub_frame`, `main_frame` | downloaded again; cache and cookies can differ, Referer is the initiator origin |
 | Only sources a page can't forge are used. Page-side capture (a fetch/XHR patch, the frames' `outerHTML`) was   |
 | removed: any script on the page can tamper with it. `chrome.debugger` was removed too: it needs the `debugger` |

@@ -88,8 +88,8 @@ export function rule(id: number, req: RequestInfo): Rule {
       urlFilter: `|${req.url}|`,
       isUrlFilterCaseSensitive: true,
       resourceTypes: [req.type as chrome.declarativeNetRequest.ResourceType],
-      // the frame making the request, which differs from the top-level site inside iframes
-      initiatorDomains: [new URL(req.topLevelUrl).hostname],
+      // not initiatorDomains: that is the frame making the request, e.g. an ad iframe's own site
+      topDomains: [new URL(req.topLevelUrl).hostname],
     },
   };
 }
@@ -119,20 +119,15 @@ export async function installedRules(): Promise<{ key: string; id: number }[]> {
   }
   return all
     .filter((r) => !bad.includes(r))
-    .flatMap(
-      ({ id, condition: { urlFilter, initiatorDomains, resourceTypes } }) =>
-        urlFilter && initiatorDomains?.length && resourceTypes?.length
-          ? [
-              {
-                id,
-                key: key(
-                  urlFilter.slice(1, -1),
-                  initiatorDomains[0],
-                  resourceTypes[0],
-                ),
-              },
-            ]
-          : [],
+    .flatMap(({ id, condition: { urlFilter, topDomains, resourceTypes } }) =>
+      urlFilter && topDomains?.length && resourceTypes?.length
+        ? [
+            {
+              id,
+              key: key(urlFilter.slice(1, -1), topDomains[0], resourceTypes[0]),
+            },
+          ]
+        : [],
     );
 }
 

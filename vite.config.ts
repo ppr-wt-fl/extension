@@ -19,8 +19,11 @@ export default defineConfig({
   ],
   build: {
     rollupOptions: {
-      // not in the manifest, the service worker opens it with chrome.offscreen
-      input: { offscreen: 'src/offscreen/index.html' },
+      // not in the manifest: the service worker opens them (chrome.offscreen, chrome.tabs on install)
+      input: {
+        offscreen: 'src/offscreen/index.html',
+        onboarding: 'src/onboarding/index.html',
+      },
     },
   },
   server: {

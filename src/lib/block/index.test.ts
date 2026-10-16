@@ -22,6 +22,13 @@ test('installedRules restores the key a rule was made for', async () => {
   expect(await installedRules()).toEqual([{ id: 7, key: ruleKey(req) }])
 })
 
+test('rule matches the top-level site, not the frame making the request, e.g. inside an ad iframe', () => {
+  vi.stubGlobal('chrome', { declarativeNetRequest: { RuleActionType: { BLOCK: 'block' } } })
+  const { condition } = rule(7, req)
+  expect(condition.topDomains).toEqual(['news.example'])
+  expect(condition.initiatorDomains).toBeUndefined()
+})
+
 test('installedRules removes only rules of our own files', async () => {
   const ws = { ...req, url: 'wss://ads.example/socket', type: 'websocket' }
   const other = { ...req, url: 'chrome-extension://other/a.js' }

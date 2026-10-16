@@ -7,7 +7,7 @@ Blocks ads and trackers in Chrome using ML.
 
 ## Install
 
-- Use Chrome 124 or newer (version from 2024).
+- Use Chrome 141 or newer (version from autumn 2025).
 - Download compressed extension TODO LINK
 - Unzip `crx-blocker-extension-1.0.0.zip`
 - Go to `chrome://extensions`.

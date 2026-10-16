@@ -1,5 +1,8 @@
 import { flags } from "@/lib/flags";
 import { outboxSink } from "./outbox";
+import { logger } from "../log";
+
+const log = logger("perf");
 
 // Perf metrics. Every context buffers samples -> sink, which writes them raw to IndexedDB (./outbox); analysed offline.
 // Prefix = where taken: sw, hop, worker/learner, block/rules/decision/sources, page, startup, fl, offscreen; or what:
@@ -28,9 +31,11 @@ export function initSink(name: string, delay = flags.perf.flushMs) {
 }
 
 export function record(name: string, value: number) {
-  if (sink === undefined) throw new Error("perf sink not initialized");
-
   if (!flags.perf.enabled) return;
+
+  if (sink === undefined)
+    log.warn("perf.record() called before initSink()", name, value);
+
   if (buffer.length >= flags.perf.maxBuffer) buffer.shift();
   buffer.push([name, value, now()]);
   schedule();

@@ -8,7 +8,7 @@ import {
 import { flags } from "@/lib/flags";
 import { gradient, inspectModes, predict, THRESHOLD } from "@/model";
 import { logger } from "@/lib/log";
-import { count, now, record, since } from "@/lib/perf";
+import { count, now, record, since, type LearnerSize } from "@/lib/perf";
 
 const log = logger("learn");
 
@@ -130,7 +130,7 @@ export class Learner {
   }
 
   /** State sizes, for perf. */
-  sizes(): Record<string, number> {
+  sizes(): Record<LearnerSize, number> {
     return {
       queue: this.queue.length,
       replay: this.replay.items.length,

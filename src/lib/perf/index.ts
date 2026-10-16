@@ -14,6 +14,114 @@ export function now(): number {
   return performance.timeOrigin + performance.now();
 }
 
+type Verdict = "block" | "allow";
+/** keys of Learner.sizes() */
+export type LearnerSize = "queue" | "replay" | "trained" | "perSite" | "steps";
+/** chrome.webRequest resource type */
+type ResourceType = string;
+
+/** Every metric recorded. record/count/gauge/since only take these. */
+export type Metric =
+  // browser / service worker lifecycle
+  | "browser.starts"
+  | "sw.starts"
+  | "sw.listenerFailed"
+  | "sw.requestsCompleted"
+  | "sw.eventDelay"
+  | "sw.topLevelUrl"
+  // collect (src/lib/collect)
+  | `sw.observations.${"webRequest" | "refetch"}`
+  | `sw.bodyMissing.${ResourceType}`
+  | `sw.features.${ResourceType}`
+  | `sw.featuresBodyChars.${ResourceType}`
+  | "sw.ready"
+  | "sw.offscreenCreate"
+  | "sw.offscreenSetupFailed"
+  | "sw.offscreenUnreachable"
+  | "sw.offscreenClosing"
+  | "sw.learnerFailed"
+  | "sw.timeToVerdict"
+  // refetch
+  | "sw.refetch"
+  | "sw.refetchBytes"
+  | "sw.refetchFailed"
+  | "sw.refetchSkipped"
+  // cache (src/background/checked)
+  | `cache.${"inflight" | "run-from-scratch" | "fresh" | "needs-body-validation"}`
+  | "cache.validatorHit"
+  | "cache.bodyHit"
+  | "cache.evicted"
+  | "cache.saveFailed"
+  | "cache.size"
+  | "sw.cacheLoad"
+  | "sw.cacheSave"
+  // blocking rules
+  | "sw.ruleUpdate"
+  | "sw.ruleFlush"
+  | "sw.timeToRule"
+  | "rules"
+  | "rules.added"
+  | "rules.evicted"
+  | "rules.removed"
+  | "block.hits"
+  | "block.loadedDespiteRule"
+  | "block.notBlockable"
+  | "block.siteDisabledByUser"
+  | "block.siteReenabledByUser"
+  | "block.breakageReported"
+  | "block.adSeenReported"
+  // message hops
+  | "hop.swToOffscreen"
+  | "hop.offscreenToWorker"
+  | "hop.workerToSw"
+  // offscreen / worker
+  | "offscreen.creations"
+  | "offscreen.heapUsed"
+  | "offscreen.heapTotal"
+  | "worker.handle"
+  | "worker.gaugesFailed"
+  | "worker.listsFailed"
+  | `decision.${Verdict}`
+  // startup
+  | "startup.backend"
+  | "startup.model"
+  | "startup.learner"
+  | "startup.lists"
+  | "startup.total"
+  // sizes
+  | "features.wasmBytes"
+  | "tf.numTensors"
+  | "tf.numBytes"
+  | "tf.wasmBytes"
+  | "model.weightsBytes"
+  | "model.jsonBytes"
+  // filter lists: confusion matrix filter-lists.<model>.<lists>.<type>, per list filter-lists.<list>.<model>.<type>
+  | "filter-lists.match"
+  | "filter-lists.wasmBytes"
+  | `filter-lists.${string}.${Verdict}.${ResourceType}`
+  // learner
+  | `learner.${LearnerSize}`
+  | "learner.batchFailed"
+  | "learner.queueWait"
+  | "learner.batchSize"
+  | "learner.infer"
+  | "learner.batch"
+  | "learner.trainRows"
+  | "learner.train"
+  // federated learning, flags.perf.fl
+  | "fl.siteGradNorm"
+  | "fl.siteClipped"
+  | "fl.loss"
+  | "fl.disagreement"
+  | "fl.probabilityDiff"
+  | "fl.rejectedDuplicate"
+  | "fl.rejectedPerSite"
+  | "fl.updateNorm"
+  | "fl.updateClipped"
+  | "fl.roundMs"
+  | "fl.roundRows"
+  | "fl.updateBytes";
+
 /** `at`: `now()` when recorded */
 export type Sample = [name: string, value: number, at: number];
 
@@ -30,7 +138,7 @@ export function initSink(name: string, delay = flags.perf.flushMs) {
   schedule();
 }
 
-export function record(name: string, value: number) {
+export function record(name: Metric, value: number) {
   if (!flags.perf.enabled) return;
 
   if (sink === undefined)
@@ -41,21 +149,21 @@ export function record(name: string, value: number) {
   schedule();
 }
 
-const gauges = new Map<string, number>();
+const gauges = new Map<Metric, number>();
 
 /** Records a current size, only when it changed since the last call. */
-export function gauge(name: string, value: number) {
+export function gauge(name: Metric, value: number) {
   if (gauges.get(name) === value) return;
   gauges.set(name, value);
   record(name, value);
 }
 
-export function count(name: string, n = 1) {
+export function count(name: Metric, n = 1) {
   record(name, n);
 }
 
 /** Records time since `start` (a `now()`), + User Timing entry with flags.perf.trace. */
-export function since(name: string, start: number): number {
+export function since(name: Metric, start: number): number {
   const end = now();
   record(name, end - start);
   if (flags.perf.enabled && flags.perf.trace) {

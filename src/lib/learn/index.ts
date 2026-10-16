@@ -83,7 +83,15 @@ export class Learner {
     private readonly measureFl = flags.perf.enabled && flags.perf.fl,
   ) {
     this.replay = new Reservoir(config.replayCapacity);
-    this.modes = inspectModes(local);
+    // inspectModes costs 3 forward passes, and modeDependent only matters when training in training mode
+    if (config.trainMode === "training") {
+      this.modes = inspectModes(local);
+    } else {
+      this.modes = {
+        modeDependent: false,
+        stateful: local.nonTrainableWeights.length > 0,
+      };
+    }
 
     if (this.modes.stateful) {
       log.warn(

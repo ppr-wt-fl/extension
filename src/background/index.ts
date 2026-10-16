@@ -9,7 +9,7 @@ import { flags } from "@/lib/flags";
 import { count, gauge, now, initSink, since } from "@/lib/perf";
 import { writeMeta } from "@/lib/perf/outbox";
 import { featuresWasmBytes } from "@/lib/features";
-import { removeAllRules, ruleKey } from "@/lib/block";
+import { disabledSites, removeAllRules, ruleKey, siteDisabled } from "@/lib/block";
 import { logger } from "@/lib/log";
 import * as checked from "./checked";
 import { refetch } from "./refetch";
@@ -68,6 +68,16 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
     chrome.tabs.create({ url: chrome.runtime.getURL("src/onboarding/index.html") });
 });
 
+// The sites the user turned the extension off on, read on every service worker start and again when the popup
+// changes them, so requests don't each read the allow rule
+let disabled: Promise<string[]> = Promise.resolve([]);
+if (!flags.processDisabledSites) {
+  disabled = disabledSites().catch(() => []);
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.disabledSitesChanged === true) disabled = disabledSites().catch(() => []);
+  });
+}
+
 chrome.webRequest.onCompleted.addListener(
   onCompleted,
   { urls: ["<all_urls>"] },
@@ -93,6 +103,14 @@ async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
         : await topLevelUrl(details.tabId);
     if (details.type !== "main_frame") since("sw.topLevelUrl", start);
     if (!top) return;
+    // the allow rules (src/lib/block) override any rule we'd add, so no refetch, verdict or rule: they cover the
+    // disabled site's pages and what the site starts in iframes on other sites, but not its navigations
+    if (!flags.processDisabledSites) {
+      const sites = await disabled;
+      let initiator = "";
+      if (details.type !== "main_frame") initiator = URL.parse(details.initiator ?? "")?.hostname ?? "";
+      if (siteDisabled(sites, new URL(top).hostname) || siteDisabled(sites, initiator)) return;
+    }
 
     const observation: Observation = {
       source: "webRequest",

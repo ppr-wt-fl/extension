@@ -64,10 +64,13 @@ export class Classifier {
   /** Block probability of the features, once their batch is classified. */
   submit(features: Float64Array): Promise<number> {
     return new Promise((resolve, reject) => {
+      // Queue
+      // append
+      // full -> flush
+      // no timer -> start one and flush once it fills
+
       this.queue.push({ features, resolve, reject, submittedAt: now() });
 
-      // queue handling (deadline from the first queued request + max capacity). Not re-armed per request: in a
-      // burst that would hold the batch until traffic stops
       if (this.queue.length >= this.config.batchSize) {
         this.flush();
       } else if (this.timer === undefined) {
@@ -80,6 +83,8 @@ export class Classifier {
   flush(): void {
     clearTimeout(this.timer);
     this.timer = undefined;
+
+    // empty queue
     const queued = this.queue.splice(0);
     if (!queued.length) return;
 
@@ -92,9 +97,11 @@ export class Classifier {
     try {
       let model = this.local;
       if (this.config.inferWith === "global") model = this.global;
+
       const start = now();
       const probabilities = predict(model, features);
       since("learner.infer", start);
+
       queued.forEach((p, i) => p.resolve(probabilities[i]));
 
       // before the first step local and global are the same
@@ -186,6 +193,7 @@ export class Trainer {
   /** Buffers the sample if admitted. Resolves once the steps it started, and those before, are done. */
   add(sample: Sample): Promise<void> {
     if (this.admit(sample)) this.buffer.push(sample);
+
     if (this.buffer.length >= this.config.stepRows) {
       const fresh = this.buffer.splice(0, this.config.stepRows);
       this.running = this.running.then(async () => {
@@ -239,6 +247,7 @@ export class Trainer {
         site = undefined;
         for (const slice of chunks(group, this.config.sliceRows)) {
           await yieldToEvents();
+
           this.beforeSlice();
           const start = now();
           const result = gradient(
@@ -303,6 +312,7 @@ export class Trainer {
       if (this.measureFl) count("fl.rejectedDuplicate");
       return false;
     }
+
     if (admitted >= this.config.perSiteLimit) {
       // once per site and round
       if (admitted === this.config.perSiteLimit) {

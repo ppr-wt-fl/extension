@@ -25,7 +25,7 @@ export const flags = {
     /** or this long after its first request arrived. Compute is ~2-5 ms per batch, so longer barely batches more. */
     idleMs: 20,
     /** Labeled rows per SGD step; rows short of a step wait for more, and are lost when the session ends. */
-    stepRows: 64,
+    miniBatchSize: 64,
     /** Rows per forward/backward pass, ~0.9 ms each. Waiting requests are classified between slices, so ~30 ms max wait. */
     sliceRows: 32,
     /** Mean-gradient SGD (summed loss / rows), and site clipping already bounds each step: a plain small step size. */

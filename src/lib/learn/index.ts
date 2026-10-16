@@ -142,7 +142,7 @@ export class Classifier {
 }
 
 /**
- * Buffers labeled samples and takes one SGD step on every `stepRows` of them (plus replayed ones), in slices of
+ * Buffers labeled samples and takes one SGD step on every `miniBatchSize` of them (plus replayed ones), in slices of
  * `sliceRows` rows with `beforeSlice` (classifying the waiting requests) before each.
  * Every `roundSteps` steps it sends the clipped local - global update and starts over from global.
  * Everything is in memory (src/offscreen/worker.ts): lost when the browser or the extension restarts, so are the
@@ -194,8 +194,8 @@ export class Trainer {
   add(sample: Sample): Promise<void> {
     if (this.admit(sample)) this.buffer.push(sample);
 
-    if (this.buffer.length >= this.config.stepRows) {
-      const fresh = this.buffer.splice(0, this.config.stepRows);
+    if (this.buffer.length >= this.config.miniBatchSize) {
+      const fresh = this.buffer.splice(0, this.config.miniBatchSize);
       this.running = this.running.then(async () => {
         try {
           await this.step(fresh);

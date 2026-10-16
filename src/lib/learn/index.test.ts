@@ -71,7 +71,7 @@ async function trainOn(
   site: (i: number) => string = () => "a",
   from = 0,
 ) {
-  l.config.stepRows = n;
+  l.config.miniBatchSize = n;
   const steps = rows
     .slice(from, from + n)
     .map((row, i) =>
@@ -130,8 +130,8 @@ test("slices add up to the same step", async () => {
   ).toBeLessThan(1e-4);
 });
 
-test("steps on every stepRows rows, and keeps the rest buffered", async () => {
-  const l = await learner({ stepRows: 3 });
+test("steps on every miniBatchSize rows, and keeps the rest buffered", async () => {
+  const l = await learner({ miniBatchSize: 3 });
   const add = (i: number) =>
     l.trainer.add({ features: rows[i], label: flipped(i), site: "a" });
   await add(0);
@@ -144,7 +144,7 @@ test("steps on every stepRows rows, and keeps the rest buffered", async () => {
 });
 
 test("classifies a request that arrives during a step before the step ends", async () => {
-  const l = await learner({ stepRows: 4, sliceRows: 1 });
+  const l = await learner({ miniBatchSize: 4, sliceRows: 1 });
   const step = trainOn(l, 4);
   // the step is past its first slice
   await new Promise((r) => setTimeout(r));
@@ -182,7 +182,7 @@ test("sends a clipped update after roundSteps and starts over from global", asyn
 });
 
 test("trains on a row once per round, and at most perSiteLimit per site", async () => {
-  const l = await learner({ perSiteLimit: 1, stepRows: 1 });
+  const l = await learner({ perSiteLimit: 1, miniBatchSize: 1 });
   // only the first is admitted: the second is the same row from another site, the others hit the site's limit
   await Promise.all([
     l.trainer.add({ features: rows[0], label: flipped(0), site: "a" }),

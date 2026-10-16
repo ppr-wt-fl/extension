@@ -53,33 +53,44 @@ export function outboxSink(context: string): (samples: Sample[]) => void {
   };
 }
 
-/** Gzipped NDJSON of every sample, and the last key in it for `deleteUpTo`. */
-export async function exportOutbox(): Promise<{
+// per file: the whole file is built in memory before download, so a big outbox goes out as several
+const MAX_FILE_BYTES = 500e6;
+
+/** Gzipped NDJSON of the samples after `after` (from the start if unset), up to ~MAX_FILE_BYTES uncompressed, and
+ * the last key in it for `deleteUpTo` and the next call. No `lastKey`: nothing left. Not `full`: this file reached the end. */
+export async function exportOutbox(after?: IDBValidKey): Promise<{
   blob: Blob;
   lastKey?: IDBValidKey;
+  full: boolean;
 }> {
   const tx = (await openIndexedDB()).transaction(STORE);
   // one Blob per record: Chrome can keep Blob data off the JS heap, unlike millions of strings
   const parts: Blob[] = [];
+  let bytes = 0;
   let lastKey: IDBValidKey | undefined;
-  const request = tx.objectStore(STORE).openCursor();
+  let range: IDBKeyRange | undefined;
+  if (after !== undefined) range = IDBKeyRange.lowerBound(after, true);
+  const request = tx.objectStore(STORE).openCursor(range);
   request.onsuccess = () => {
     const cursor = request.result;
     if (!cursor) return;
     const rows = [...decode(cursor.value as OutboxRecord)].map((row) =>
       JSON.stringify(row),
     );
-    parts.push(new Blob([rows.join("\n") + "\n"]));
+    const part = new Blob([rows.join("\n") + "\n"]);
+    parts.push(part);
     lastKey = cursor.key;
-    cursor.continue();
+    bytes += part.size;
+    // not continuing ends the cursor, the transaction completes
+    if (bytes < MAX_FILE_BYTES) cursor.continue();
   };
   // the transaction, not request.onerror: a throw in onsuccess aborts it without firing onerror, hanging the export
   await done(tx);
-  // shortcut: whole file built in memory before download, fine for a few hundred MB gzipped; export in key ranges if it outgrows that
   const gzip = new Blob(parts).stream().pipeThrough(new CompressionStream("gzip"));
   return {
     blob: await new Response(gzip).blob(),
     lastKey,
+    full: bytes >= MAX_FILE_BYTES,
   };
 }
 

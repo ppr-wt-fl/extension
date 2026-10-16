@@ -27,9 +27,22 @@ function formatSize(bytes: number) {
   return mb < 1000 ? `${mb.toFixed(1)} MB` : `${(mb / 1000).toFixed(2)} GB`;
 }
 
-/** Downloads the outbox as gzipped NDJSON, returns the last exported key once the file is saved. */
-async function download() {
-  const { blob, lastKey } = await exportOutbox();
+/** Downloads the outbox as gzipped NDJSON files, passing each file's last key to `onSaved` once it is on disk. */
+async function download(onSaved: (lastKey: IDBValidKey) => void) {
+  let after: IDBValidKey | undefined;
+  while (true) {
+    const { blob, lastKey, full } = await exportOutbox(after);
+    if (lastKey === undefined) return;
+    await save(blob);
+    onSaved(lastKey);
+    // records written meanwhile wait for the next export, else a slow save chases new flushes forever
+    if (!full) return;
+    after = lastKey;
+  }
+}
+
+/** Downloads `blob`, resolves once the file is saved. */
+async function save(blob: Blob) {
   const url = URL.createObjectURL(blob);
   try {
     // chrome.downloads, not <a download>: "clear exported" must only show once the file is really on disk
@@ -50,7 +63,6 @@ async function download() {
   } finally {
     URL.revokeObjectURL(url);
   }
-  return lastKey;
 }
 
 /** Turns blocking on the active tab's site off or on, then offers to reload the tab so it applies. */
@@ -167,8 +179,8 @@ export default function App() {
         disabled={downloading}
         onClick={() => {
           setDownloading(true);
-          download()
-            .then(setExported)
+          // keys of saved files are kept on failure, so "clear exported" still deletes only those
+          download(setExported)
             .catch((error) => alert(`Export failed: ${error}`))
             .finally(() => setDownloading(false));
         }}

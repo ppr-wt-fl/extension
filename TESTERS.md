@@ -33,7 +33,7 @@ Blocks ads and trackers in Chrome using ML.
 
 - Open the popup
 - Click **export**
-- Send the `.ndjson.gz` file from your downloads.
+- Send the `perf-*.ndjson.gz` files from your downloads (a big export is split into several).
 
 > [!WARNING]
 > Closing the popup cancels the download

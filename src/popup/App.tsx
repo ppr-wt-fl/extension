@@ -6,6 +6,7 @@ import {
   clearOutbox,
   deleteUpTo,
   exportOutbox,
+  installId,
   outboxStats,
 } from "@/lib/perf/outbox";
 
@@ -29,14 +30,15 @@ function formatSize(bytes: number) {
 
 /** Downloads the outbox as gzipped NDJSON, returns the last exported key once the file is saved. */
 async function download() {
-  const { blob, lastKey } = await exportOutbox();
+  const install = await installId();
+  const { blob, lastKey } = await exportOutbox(install);
   const url = URL.createObjectURL(blob);
   try {
     // chrome.downloads, not <a download>: "clear exported" must only show once the file is really on disk
     const id = await chrome.downloads.download({
       url,
       // ":" is an invalid filename character on Windows, rejected by chrome.downloads
-      filename: `perf-${new Date().toISOString().replace(/:/g, "-")}.ndjson.gz`,
+      filename: `perf-${install.slice(0, 8)}-${new Date().toISOString().replace(/:/g, "-")}.ndjson.gz`,
     });
     await new Promise<void>((resolve, reject) => {
       const onChanged = (delta: chrome.downloads.DownloadDelta) => {

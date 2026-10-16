@@ -166,8 +166,12 @@ scripts and pages can be compared by writing its fixture elsewhere and running w
 Behind `flags.perf` (`src/lib/flags.ts`). Every context records samples with `record`/`since`/`count` (`src/lib/perf`) and
 every `flushMs` writes them raw, with timestamps, to IndexedDB (`perf`/`outbox`, `src/lib/perf/outbox.ts`): one record
 per flush, names interned per record. The service worker and the offscreen worker write their own, content scripts
-message the service worker. The popup exports the outbox as gzipped NDJSON (`.ndjson.gz`, `{t, ctx, instance, name, value}` per line) and
-clears it; aggregation (percentiles etc.) happens offline. Upload to a server is a TODO in `src/lib/perf/outbox.ts`.
+message the service worker. The popup exports the outbox as gzipped NDJSON (`.ndjson.gz`, `{install, t, ctx, instance, name, value}` per line) and
+clears it; `install` is a random id per install (`chrome.storage.local`), also in the filename. The SW (on browser launch,
+install and update) and the offscreen worker (on start) store their environment in `perf`/`meta` (never cleared), a new
+row only when it changed, at the top of every export as `{install, t, ctx, name: "meta", meta}` rows (browser, device and
+extension version for sw, tfjs backend and model hash for worker): match each sample to its context's last meta row before
+its `t`. Aggregation (percentiles etc.) happens offline. Upload to a server is a TODO in `src/lib/perf/outbox.ts`.
 
 - Latency: `sw.timeToRule` (request completed until its block rule is active, the request's repeats load until
   then), `sw.timeToVerdict`, and its stages: `sw.eventDelay`, `sw.topLevelUrl`, `sw.refetch`, `sw.ready`,

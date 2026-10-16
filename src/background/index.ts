@@ -7,6 +7,7 @@ import {
 } from "@/lib/collect";
 import { flags } from "@/lib/flags";
 import { count, now, initSink, since } from "@/lib/perf";
+import { writeMeta } from "@/lib/perf/outbox";
 import { removeAllRules, ruleKey } from "@/lib/block";
 import { logger } from "@/lib/log";
 import * as checked from "./checked";
@@ -19,6 +20,38 @@ count("sw.starts");
 log.debug("service worker started");
 // profile start (browser launch), not SW wake-ups
 chrome.runtime.onStartup.addListener(() => count("browser.starts"));
+// Environment, on browser launch, install and extension or Chrome update. The offscreen worker writes its own (tfjs backend, model)
+if (flags.perf.enabled) {
+  const writeSwMeta = () =>
+    swMeta()
+      .then((meta) => writeMeta("sw", meta))
+      .catch(log.error);
+  chrome.runtime.onStartup.addListener(writeSwMeta);
+  chrome.runtime.onInstalled.addListener(writeSwMeta);
+}
+
+async function swMeta() {
+  // not in TS's DOM lib: Chromium only
+  const nav = navigator as Navigator & {
+    userAgentData?: {
+      getHighEntropyValues(hints: string[]): Promise<Record<string, unknown>>;
+    };
+    deviceMemory?: number;
+  };
+  return {
+    version: chrome.runtime.getManifest().version,
+    userAgent: navigator.userAgent,
+    userAgentData: await nav.userAgentData?.getHighEntropyValues([
+      "platform",
+      "platformVersion",
+      "architecture",
+      "model",
+      "fullVersionList",
+    ]),
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    deviceMemory: nav.deviceMemory,
+  };
+}
 
 chrome.webRequest.onCompleted.addListener(
   onCompleted,

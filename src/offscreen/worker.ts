@@ -1,4 +1,4 @@
-import { env, io, memory, setBackend } from "@tensorflow/tfjs";
+import { env, getBackend, io, memory, setBackend } from "@tensorflow/tfjs";
 import { setWasmPaths } from "@tensorflow/tfjs-backend-wasm";
 import tfWasmUrl from "@tensorflow/tfjs-backend-wasm/dist/tfjs-backend-wasm.wasm?url";
 import tfSimdUrl from "@tensorflow/tfjs-backend-wasm/dist/tfjs-backend-wasm-simd.wasm?url";
@@ -10,6 +10,7 @@ import { loadLists } from "@/lib/lists";
 import { inputSize, loadModel, THRESHOLD } from "@/model";
 import { logger } from "@/lib/log";
 import { count, gauge, now, initSink, since } from "@/lib/perf";
+import { writeMeta } from "@/lib/perf/outbox";
 import { restoreRules, type RuleChange, ruleChange, rules } from "./rules";
 // FIXME: copy the model into this repo instead of importing it from the robustness-evaluation run
 import modelJson from "../../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/model.json";
@@ -121,8 +122,30 @@ const learnerPromise = (async () => {
   since("startup.learner", start);
   since("startup.total", startupStart);
   log.info(`learner ready in ${(now() - startupStart).toFixed(0)}ms`);
+  // every worker start, no chrome.runtime events here: writeMeta skips it when unchanged
+  if (flags.perf.enabled)
+    workerMeta(weights)
+      .then((meta) => writeMeta("worker", meta))
+      .catch(log.error);
   return learner;
 })();
+
+/** The worker's half of the environment (the SW writes the rest), installId added at export. */
+async function workerMeta(weights: ArrayBuffer) {
+  const digest = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", weights),
+  );
+  return {
+    backend: getBackend(),
+    simd: await env().getAsync("WASM_HAS_SIMD_SUPPORT"),
+    threads: env().getBool("WASM_HAS_MULTITHREAD_SUPPORT"),
+    // identifies the model: its weights' SHA-256, first 8 bytes as hex
+    model: Array.from(digest.slice(0, 8), (b) =>
+      b.toString(16).padStart(2, "0"),
+    ).join(""),
+  };
+}
+
 // a rejection isn't an uncaught error, so worker.onerror never sees it: tell the document so it closes
 learnerPromise.catch((error) => {
   log.error("learner failed to start", error);

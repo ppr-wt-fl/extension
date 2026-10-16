@@ -170,8 +170,9 @@ message the service worker. The popup exports the outbox as gzipped NDJSON (`.nd
 clears it; `install` is a random id per install (`chrome.storage.local`), also in the filename. The SW (on browser launch,
 install and update) and the offscreen worker (on start) store their environment in `perf`/`meta` (never cleared), a new
 row only when it changed, at the top of every export as `{install, t, ctx, name: "meta", meta}` rows (browser, device and
-extension version for sw, tfjs backend and model hash for worker): match each sample to its context's last meta row before
-its `t`. Aggregation (percentiles etc.) happens offline. Upload to a server is a TODO in `src/lib/perf/outbox.ts`.
+extension version for sw, tfjs backend and model hash for worker). A start writes its meta row after its first samples
+(`sw.starts`, `startup.*`), so match per `instance`, not per sample: all of an instance's samples belong to its context's
+last meta row before that instance's last sample. Aggregation (percentiles etc.) happens offline. Upload to a server is a TODO in `src/lib/perf/outbox.ts`.
 
 - Latency: `sw.timeToRule` (request completed until its block rule is active, the request's repeats load until
   then), `sw.timeToVerdict`, and its stages: `sw.eventDelay`, `sw.topLevelUrl`, `sw.refetch`, `sw.ready`,

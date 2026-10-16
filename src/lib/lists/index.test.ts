@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { loadLists } from ".";
+import { listsWasmBytes, loadLists } from ".";
 
 // vitest's asset urls are root-relative (file:///filterlists/...): read them from the project root
 vi.stubGlobal("fetch", async (url: URL) =>
@@ -10,7 +10,9 @@ vi.stubGlobal("fetch", async (url: URL) =>
 );
 
 test("names the lists that block", async () => {
+  expect(listsWasmBytes()).toBeUndefined();
   const check = await loadLists();
+  expect(listsWasmBytes()).toBeGreaterThan(0);
   const topLevelUrl = "https://www.example.com/";
   expect(check({ url: "https://securepubads.g.doubleclick.net/tag/js/gpt.js", topLevelUrl, type: "script" })).toEqual(["easylist"]);
   expect(check({ url: "https://www.google-analytics.com/analytics.js", topLevelUrl, type: "script" })).toEqual(["easyprivacy"]);

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { extract, inlineScripts, presets, type RequestInfo } from '.'
+import { extract, featuresWasmBytes, inlineScripts, presets, type RequestInfo } from '.'
 
 const request: RequestInfo = {
   url: 'https://cdn.example.com/static/app.js',
@@ -29,4 +29,10 @@ test('mixes TS and Rust features', () => {
 test('inlineScripts', () => {
   const html = '<script>a()</script>\r\n<script src="x.js"></script><script>\r\nb()\r\n</script>'
   expect(inlineScripts(html)).toEqual(['a()', '\nb()\n'])
+})
+
+test('featuresWasmBytes is the linear memory, in 64 KiB pages', () => {
+  const bytes = featuresWasmBytes()!
+  expect(bytes).toBeGreaterThan(0)
+  expect(bytes % 65536).toBe(0)
 })

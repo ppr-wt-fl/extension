@@ -2,7 +2,8 @@ import { flags } from "@/lib/flags";
 import { outboxSink } from "./outbox";
 
 // Perf metrics. Every context buffers samples -> sink, which writes them raw to IndexedDB (./outbox); analysed offline.
-// Prefix = where taken: sw, hop, worker/learner, block/rules/decision/sources, page, startup, fl.
+// Prefix = where taken: sw, hop, worker/learner, block/rules/decision/sources, page, startup, fl, offscreen; or what:
+// tf, model, features, filter-lists.
 // Durations ms, sizes bytes. Counter = samples of 1.
 
 /** Epoch ms, sub-ms resolution, comparable across contexts. */

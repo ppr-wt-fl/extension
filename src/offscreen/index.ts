@@ -1,8 +1,27 @@
-import { now } from "@/lib/perf";
+import { flags } from "@/lib/flags";
+import { gauge, initSink, now } from "@/lib/perf";
 import type { LearnerReply, OffscreenRequest } from "./worker";
 
 // Relays the service worker's requests to the learner, which runs in a worker so training doesn't block the main
 // thread this document shares with the popup.
+
+initSink("offscreen");
+
+// JS heap of this renderer's main isolate: this document, plus the popup while open (likely same process). Chrome-only,
+// Window-only. Precise if the process is site-locked (likely for extensions, unverified), else bucketed (~6% steps)
+// and cached for 20 min. No measureUserAgentSpecificMemory: it needs cross-origin isolation.
+type MemoryInfo = { usedJSHeapSize: number; totalJSHeapSize: number };
+const heap = () => (performance as { memory?: MemoryInfo }).memory;
+if (flags.perf.enabled && heap()) {
+  // shortcut: every minute, not flushMs: the heap changes every tick, so each sample is an outbox write even when
+  // idle. Shorten for finer curves if the outbox stays small.
+  setInterval(() => {
+    // a new snapshot per read
+    const { usedJSHeapSize, totalJSHeapSize } = heap()!;
+    gauge("offscreen.heapUsed", usedJSHeapSize);
+    gauge("offscreen.heapTotal", totalJSHeapSize);
+  }, 60_000);
+}
 
 const worker = new Worker(new URL("./worker.ts", import.meta.url), {
   type: "module",

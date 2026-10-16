@@ -6,7 +6,8 @@ import {
   type Observation,
 } from "@/lib/collect";
 import { flags } from "@/lib/flags";
-import { count, now, initSink, since } from "@/lib/perf";
+import { count, gauge, now, initSink, since } from "@/lib/perf";
+import { featuresWasmBytes } from "@/lib/features";
 import { removeAllRules, ruleKey } from "@/lib/block";
 import { logger } from "@/lib/log";
 import * as checked from "./checked";
@@ -17,6 +18,14 @@ const log = logger("sw");
 initSink("sw");
 count("sw.starts");
 log.debug("service worker started");
+// wasm linear memory of the feature extractor, only grows. performance.memory is Window-only, so no heap here
+// (measureUserAgentSpecificMemory needs cross-origin isolation, which the extension isn't)
+if (flags.perf.enabled) {
+  setInterval(() => {
+    const bytes = featuresWasmBytes();
+    if (bytes !== undefined) gauge("features.wasmBytes", bytes);
+  }, flags.perf.flushMs);
+}
 // profile start (browser launch), not SW wake-ups
 chrome.runtime.onStartup.addListener(() => count("browser.starts"));
 

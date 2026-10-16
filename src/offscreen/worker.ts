@@ -1,15 +1,15 @@
-import { env, io, memory, setBackend } from "@tensorflow/tfjs";
-import { setWasmPaths } from "@tensorflow/tfjs-backend-wasm";
+import { env, findBackend, io, memory, setBackend } from "@tensorflow/tfjs";
+import { type BackendWasm, setWasmPaths } from "@tensorflow/tfjs-backend-wasm";
 import tfWasmUrl from "@tensorflow/tfjs-backend-wasm/dist/tfjs-backend-wasm.wasm?url";
 import tfSimdUrl from "@tensorflow/tfjs-backend-wasm/dist/tfjs-backend-wasm-simd.wasm?url";
 import type { Source } from "@/lib/collect";
 import { flags } from "@/lib/flags";
 import type { RequestInfo } from "@/lib/features";
 import { Learner } from "@/lib/learn";
-import { loadLists } from "@/lib/lists";
+import { listsWasmBytes, loadLists } from "@/lib/lists";
 import { inputSize, loadModel, THRESHOLD } from "@/model";
 import { logger } from "@/lib/log";
-import { count, gauge, now, initSink, since } from "@/lib/perf";
+import { count, gauge, now, initSink, record, since } from "@/lib/perf";
 import { restoreRules, type RuleChange, ruleChange, rules } from "./rules";
 // FIXME: copy the model into this repo instead of importing it from the robustness-evaluation run
 import modelJson from "../../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/model.json";
@@ -57,6 +57,8 @@ initSink("worker");
 const log = logger("worker");
 
 let learner: Learner | undefined;
+/** The tfjs-wasm emscripten module, set once its backend is ready. HEAPU8: untyped without @types/emscripten */
+let tfWasm: { HEAPU8: Uint8Array } | undefined;
 
 // Gauges: current sizes, as a sample when they change
 if (flags.perf.enabled) {
@@ -70,6 +72,11 @@ if (flags.perf.enabled) {
       gauge("tf.numBytes", tf.numBytes);
       for (const [k, v] of Object.entries(learner?.sizes() ?? {}))
         gauge(`learner.${k}`, v);
+      // wasm linear memory: only grows, not in the JS heap. performance.memory is Window-only, so no heap here
+      // (measureUserAgentSpecificMemory needs cross-origin isolation, which the extension isn't)
+      if (tfWasm) gauge("tf.wasmBytes", tfWasm.HEAPU8.buffer.byteLength);
+      const lists = listsWasmBytes();
+      if (lists !== undefined) gauge("filter-lists.wasmBytes", lists);
     } catch (error) {
       log.error("gauges failed", error);
       count("worker.gaugesFailed");
@@ -100,6 +107,10 @@ const learnerPromise = (async () => {
   });
   // TODO: maybe pick the best backend possible
   await setBackend("wasm");
+  // HEAPU8 is replaced when the memory grows, so read through the module each time
+  tfWasm = (findBackend("wasm") as BackendWasm | null)?.wasm as
+    | { HEAPU8: Uint8Array }
+    | undefined;
   since("startup.backend", start);
 
   start = now();
@@ -115,6 +126,9 @@ const learnerPromise = (async () => {
       `the model takes ${inputSize(global)} features, feature_order.json lists ${n}`,
     );
   since("startup.model", start);
+  record("model.weightsBytes", weights.byteLength);
+  // as bundled: minified, the file's whitespace isn't shipped
+  record("model.jsonBytes", new Blob([JSON.stringify(json)]).size);
 
   start = now();
   learner = new Learner(global, local);

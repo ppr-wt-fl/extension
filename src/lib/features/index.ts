@@ -35,9 +35,16 @@ export const tsFeatures = new Map<string, Feature>([
   // ['url_has_query', (req) => Number(req.url.includes('?'))],
 ]);
 
+let memory: WebAssembly.Memory | undefined;
+
 /** Loads the wasm module. Must have resolved before `extract`. */
 export async function initRust(input: InitInput): Promise<void> {
-  await init({ module_or_path: input });
+  memory = (await init({ module_or_path: input })).memory;
+}
+
+/** Bytes of the wasm module's linear memory, undefined before `initRust`. */
+export function featuresWasmBytes(): number | undefined {
+  return memory?.buffer.byteLength;
 }
 
 /** The named features of a request, in the given order. Throws on unknown names. */

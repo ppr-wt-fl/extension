@@ -16,18 +16,26 @@ export type Check = (req: {
   type: string;
 }) => string[];
 
+let memory: WebAssembly.Memory | undefined;
+
+/** Bytes of the wasm module's linear memory, undefined before `loadLists`. */
+export function listsWasmBytes(): number | undefined {
+  return memory?.buffer.byteLength;
+}
+
 /** Loads the filter lists (filterlists/data), to compare the model's verdicts with. */
 export async function loadLists(): Promise<Check> {
   const start = now();
   // in dev the urls are root-relative to the vite server, not the extension origin
   const url = (u: string) => new URL(u, import.meta.url);
-  const [, ...files] = await Promise.all([
+  const [wasm, ...files] = await Promise.all([
     init({ module_or_path: url(wasmUrl) }),
     ...Object.entries(engineUrls).map(async ([path, u]) => {
       const bytes = new Uint8Array(await (await fetch(url(u))).arrayBuffer());
       return [path.split("/").pop()!.slice(0, -".dat".length), bytes] as const;
     }),
   ]);
+  memory = wasm.memory;
   // after init: Lists needs the wasm
   const engines = files.map(
     ([name, bytes]) => [name, new Lists(bytes)] as const,

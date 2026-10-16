@@ -2,7 +2,8 @@ import { flags } from "@/lib/flags";
 import { outboxSink } from "./outbox";
 
 // Perf metrics. Every context buffers samples -> sink, which writes them raw to IndexedDB (./outbox); analysed offline.
-// Prefix = where taken: sw, hop, worker/learner, block/rules/decision/sources, page, startup, fl.
+// Prefix = where taken: sw, hop, worker/learner, block/rules/decision/sources, page, startup, fl, offscreen; or what:
+// tf, model, features, filter-lists.
 // Durations ms, sizes bytes. Counter = samples of 1.
 
 /** Epoch ms, sub-ms resolution, comparable across contexts. */
@@ -27,6 +28,8 @@ export function initSink(name: string, delay = flags.perf.flushMs) {
 }
 
 export function record(name: string, value: number) {
+  if (sink === undefined) throw new Error("perf sink not initialized");
+
   if (!flags.perf.enabled) return;
   if (buffer.length >= flags.perf.maxBuffer) buffer.shift();
   buffer.push([name, value, now()]);

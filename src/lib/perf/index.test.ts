@@ -33,14 +33,14 @@ test("encode interns names, decode restores the samples", () => {
 
 test("a sink gets the buffered samples after its delay", () => {
   vi.useFakeTimers();
-  record("x", 1);
+  record("sw.starts", 1);
   initSink("test", 100);
-  record("y", 2);
+  record("browser.starts", 2);
   expect(got).toEqual([]);
   vi.advanceTimersByTime(100);
   expect(got.map(([name, value]) => [name, value])).toEqual([
-    ["x", 1],
-    ["y", 2],
+    ["sw.starts", 1],
+    ["browser.starts", 2],
   ]);
 });
 
@@ -49,7 +49,7 @@ test("without a sink, the buffer keeps the newest maxBuffer samples", async () =
   const perf = await import(".");
   vi.useFakeTimers();
   const n = flags.perf.maxBuffer;
-  for (let i = 0; i < n + 5; i++) perf.record("a", i);
+  for (let i = 0; i < n + 5; i++) perf.record("rules", i);
   perf.initSink("test");
   vi.runAllTimers();
   expect(got).toHaveLength(n);
@@ -59,9 +59,9 @@ test("without a sink, the buffer keeps the newest maxBuffer samples", async () =
 test("gauge records only changes", () => {
   vi.useFakeTimers();
   initSink("test");
-  gauge("g", 1);
-  gauge("g", 1);
-  gauge("g", 2);
+  gauge("rules", 1);
+  gauge("rules", 1);
+  gauge("rules", 2);
   vi.runAllTimers();
   expect(got.map(([, value]) => value)).toEqual([1, 2]);
 });

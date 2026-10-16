@@ -16,7 +16,15 @@ import { Classifier, Trainer } from "@/lib/learn";
 import { listsWasmBytes, loadLists } from "@/lib/lists";
 import { inputSize, loadModel, THRESHOLD, transposeFreeMatMul } from "@/model";
 import { logger } from "@/lib/log";
-import { count, gauge, now, initSink, record, since } from "@/lib/perf";
+import {
+  count,
+  gauge,
+  now,
+  initSink,
+  record,
+  since,
+  type LearnerSize,
+} from "@/lib/perf";
 import { writeMeta } from "@/lib/perf/outbox";
 import { restoreRules, type RuleChange, ruleChange, rules } from "./rules";
 import modelJson from "../model/adflush/model.json";
@@ -81,7 +89,7 @@ if (flags.perf.enabled) {
         ...learner?.classifier.sizes(),
         ...learner?.trainer.sizes(),
       }))
-        gauge(`learner.${k}`, v);
+        gauge(`learner.${k as LearnerSize}`, v);
       // wasm linear memory: only grows, not in the JS heap. performance.memory is Window-only, so no heap here
       // (measureUserAgentSpecificMemory needs cross-origin isolation, which the extension isn't)
       if (tfWasm) gauge("tf.wasmBytes", tfWasm.HEAPU8.buffer.byteLength);

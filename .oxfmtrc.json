@@ -1,0 +1,11 @@
+{
+  "printWidth": 120,
+  "ignorePatterns": [
+    "features/tests/fixtures/",
+    "features/data/",
+    "filterlists/data/",
+    "src/model/adflush/",
+    "public/",
+    "bun.lock"
+  ]
+}

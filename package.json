@@ -10,6 +10,8 @@
     "preview": "vite preview",
     "test": "bun run build:features && bun run build:filterlists && vitest run",
     "bench": "bun bench/pageload.ts",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
     "build:features": "cargo build --release --target wasm32-unknown-unknown --manifest-path features/Cargo.toml && wasm-bindgen --target web --out-dir features/pkg features/target/wasm32-unknown-unknown/release/adflush_features.wasm",
     "build:filterlists": "cargo build --release --lib --target wasm32-unknown-unknown --manifest-path filterlists/Cargo.toml && wasm-bindgen --target web --out-dir filterlists/pkg filterlists/target/wasm32-unknown-unknown/release/filterlists.wasm && cargo run --release --manifest-path filterlists/Cargo.toml --bin compile -- filterlists/pkg filterlists/data/*.txt",
     "instrumented-chromium": "chromium --remote-debugging-port=9222 --user-data-dir=$HOME/.cache/blocker-chrome --load-extension=$PWD/dist --enable-logging=stderr --v=0"
@@ -28,6 +30,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "oxfmt": "^0.73.0",
     "puppeteer-core": "^25.13.0",
     "typescript": "~5.9.3",
     "vite": "^8.0.0",

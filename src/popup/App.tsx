@@ -6,6 +6,7 @@ import {
   clearOutbox,
   deleteUpTo,
   exportOutbox,
+  installId,
   outboxStats,
 } from "@/lib/perf/outbox";
 
@@ -29,11 +30,12 @@ function formatSize(bytes: number) {
 
 /** Downloads the outbox as gzipped NDJSON files, passing each file's last key to `onSaved` once it is on disk. */
 async function download(onSaved: (lastKey: IDBValidKey) => void) {
+  const install = await installId();
   let after: IDBValidKey | undefined;
   while (true) {
-    const { blob, lastKey, full } = await exportOutbox(after);
+    const { blob, lastKey, full } = await exportOutbox(install, after);
     if (lastKey === undefined) return;
-    await save(blob);
+    await save(blob, install);
     onSaved(lastKey);
     // records written meanwhile wait for the next export, else a slow save chases new flushes forever
     if (!full) return;
@@ -41,15 +43,15 @@ async function download(onSaved: (lastKey: IDBValidKey) => void) {
   }
 }
 
-/** Downloads `blob`, resolves once the file is saved. */
-async function save(blob: Blob) {
+/** Downloads `blob`, `install` in its filename, resolves once the file is saved. */
+async function save(blob: Blob, install: string) {
   const url = URL.createObjectURL(blob);
   try {
     // chrome.downloads, not <a download>: "clear exported" must only show once the file is really on disk
     const id = await chrome.downloads.download({
       url,
       // ":" is an invalid filename character on Windows, rejected by chrome.downloads
-      filename: `perf-${new Date().toISOString().replace(/:/g, "-")}.ndjson.gz`,
+      filename: `perf-${install.slice(0, 8)}-${new Date().toISOString().replace(/:/g, "-")}.ndjson.gz`,
     });
     await new Promise<void>((resolve, reject) => {
       const onChanged = (delta: chrome.downloads.DownloadDelta) => {

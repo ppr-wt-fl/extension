@@ -1,4 +1,4 @@
-import { decode, encode, type OutboxRecord, type Sample } from ".";
+import { decode, encode, now, type OutboxRecord, type Sample } from ".";
 import { logger } from "@/lib/log";
 
 const log = logger("perf");
@@ -9,16 +9,26 @@ const log = logger("perf");
 // deleteUpTo on 2xx.
 
 const STORE = "outbox";
+// environment records per context ("sw", "worker"), a new one when it changes, kept by deleteUpTo/clearOutbox, in every export
+const META = "meta";
 let db: Promise<IDBDatabase> | undefined;
 
 function openIndexedDB(): Promise<IDBDatabase> {
   db ??= new Promise((resolve, reject) => {
-    const request = indexedDB.open("perf", 1);
-    request.onupgradeneeded = () => {
-      request.result.createObjectStore(STORE, {
-        // generates each record's key itself
-        autoIncrement: true,
-      });
+    const request = indexedDB.open("perf", 3);
+    request.onupgradeneeded = ({ oldVersion }) => {
+      const idb = request.result;
+      if (oldVersion < 1) {
+        idb.createObjectStore(STORE, {
+          // generates each record's key itself
+          autoIncrement: true,
+        });
+      }
+      if (oldVersion < 3) {
+        // v2 keyed meta by ctx, without autoIncrement: add() without a key fails there
+        if (idb.objectStoreNames.contains(META)) idb.deleteObjectStore(META);
+        idb.createObjectStore(META, { autoIncrement: true });
+      }
     };
     request.onsuccess = () => {
       // reopen on next use: a closed connection would fail every write
@@ -53,21 +63,69 @@ export function outboxSink(context: string): (samples: Sample[]) => void {
   };
 }
 
+/** A context's environment (browser, device, model, ...), exported as one row named "meta". */
+interface MetaRecord {
+  ctx: string;
+  t: number;
+  meta: Record<string, unknown>;
+}
+
+/** Appends `ctx`'s environment unless it equals `ctx`'s last one: a new model or browser gets a new row. */
+export async function writeMeta(ctx: string, meta: Record<string, unknown>) {
+  // one readwrite transaction: two contexts starting at once can't both append
+  const tx = (await openIndexedDB()).transaction(META, "readwrite");
+  const store = tx.objectStore(META);
+  const all = store.getAll();
+  all.onsuccess = () => {
+    let last: MetaRecord | undefined;
+    for (const record of all.result as MetaRecord[])
+      if (record.ctx === ctx) last = record;
+    if (JSON.stringify(last?.meta) !== JSON.stringify(meta))
+      store.add({ ctx, t: now(), meta } satisfies MetaRecord);
+  };
+  await done(tx);
+}
+
+/** Pseudonymous id of this install, in every exported row so testers' files can be merged. Created on first use. */
+let id: Promise<string> | undefined;
+export function installId(): Promise<string> {
+  id ??= (async () => {
+    const { installId } = await chrome.storage.local.get("installId");
+    if (typeof installId === "string") return installId;
+    const created = crypto.randomUUID();
+    await chrome.storage.local.set({ installId: created });
+    return created;
+  })();
+  return id;
+}
+
 // per file: the whole file is built in memory before download, so a big outbox goes out as several
 const MAX_FILE_BYTES = 500e6;
 
-/** Gzipped NDJSON of the samples after `after` (from the start if unset), up to ~MAX_FILE_BYTES uncompressed, and
- * the last key in it for `deleteUpTo` and the next call. No `lastKey`: nothing left. Not `full`: this file reached the end. */
-export async function exportOutbox(after?: IDBValidKey): Promise<{
+/** Gzipped NDJSON of every meta record and the samples after `after` (from the start if unset), up to ~MAX_FILE_BYTES
+ * uncompressed, each row with `install`, and the last key in it for `deleteUpTo` and the next call. No `lastKey`:
+ * nothing left. Not `full`: this file reached the end. */
+export async function exportOutbox(
+  install: string,
+  after?: IDBValidKey,
+): Promise<{
   blob: Blob;
   lastKey?: IDBValidKey;
   full: boolean;
 }> {
-  const tx = (await openIndexedDB()).transaction(STORE);
+  const tx = (await openIndexedDB()).transaction([STORE, META]);
   // one Blob per record: Chrome can keep Blob data off the JS heap, unlike millions of strings
   const parts: Blob[] = [];
   let bytes = 0;
   let lastKey: IDBValidKey | undefined;
+  // in every file, so each one can be matched on its own
+  const metas = tx.objectStore(META).getAll();
+  metas.onsuccess = () => {
+    const rows = (metas.result as MetaRecord[]).map(({ ctx, t, meta }) =>
+      JSON.stringify({ install, t, ctx, name: "meta", meta }),
+    );
+    parts.unshift(new Blob(rows.map((row) => row + "\n")));
+  };
   let range: IDBKeyRange | undefined;
   if (after !== undefined) range = IDBKeyRange.lowerBound(after, true);
   const request = tx.objectStore(STORE).openCursor(range);
@@ -75,7 +133,7 @@ export async function exportOutbox(after?: IDBValidKey): Promise<{
     const cursor = request.result;
     if (!cursor) return;
     const rows = [...decode(cursor.value as OutboxRecord)].map((row) =>
-      JSON.stringify(row),
+      JSON.stringify({ install, ...row }),
     );
     const part = new Blob([rows.join("\n") + "\n"]);
     parts.push(part);

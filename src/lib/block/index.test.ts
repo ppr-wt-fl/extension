@@ -147,6 +147,7 @@ test('refererRule only matches our own refetch of the URL', () => {
 
 test('setSiteDisabled also allows what the sites start outside a frame, e.g. their service workers', async () => {
   const updateDynamicRules = vi.fn(async (_: chrome.declarativeNetRequest.UpdateRuleOptions) => {})
+  const sendMessage = vi.fn(async (_: unknown) => {})
   vi.stubGlobal('chrome', {
     declarativeNetRequest: {
       RuleActionType: { ALLOW: 'allow', ALLOW_ALL_REQUESTS: 'allowAllRequests' },
@@ -154,6 +155,7 @@ test('setSiteDisabled also allows what the sites start outside a frame, e.g. the
       getDynamicRules: async () => [],
       updateDynamicRules,
     },
+    runtime: { sendMessage },
   })
   await setSiteDisabled('news.example', true)
   const [{ removeRuleIds, addRules }] = updateDynamicRules.mock.calls[0]
@@ -161,6 +163,8 @@ test('setSiteDisabled also allows what the sites start outside a frame, e.g. the
   expect(addRules?.find((r) => r.action.type === 'allow')?.condition).toEqual({ initiatorDomains: ['news.example'] })
   await setSiteDisabled('news.example', false)
   expect(updateDynamicRules.mock.calls[1][0].addRules).toEqual([])
+  // the service worker re-reads its in-memory list
+  expect(sendMessage.mock.calls).toEqual([[{ disabledSitesChanged: true }], [{ disabledSitesChanged: true }]])
 })
 
 test('installedRules removes the oldest block rules past MAX_RULES', async () => {

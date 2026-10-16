@@ -55,6 +55,8 @@ export const flags = {
     /** Larger responses (by Content-Length, or counted while reading) are skipped. */
     maxBytes: 5_000_000,
   },
+  /** Refetching, classifying and adding rules on sites disabled in the popup, though their allow rules override them. */
+  processDisabledSites: false,
   /** Compares every verdict with EasyList + EasyPrivacy's (src/lib/lists) as lists.* perf counts. Needs perf. */
   lists: true,
   /** Perf metrics (src/lib/perf), raw in IndexedDB, exported from the popup. */

@@ -1,5 +1,6 @@
 import type { RequestInfo } from "@/lib/features";
 import { MAX_RULES, type RuleChange } from "@/offscreen/rules";
+import { flags } from "@/lib/flags";
 import { logger } from "@/lib/log";
 import { count, now, since } from "@/lib/perf";
 
@@ -207,6 +208,8 @@ export async function setSiteDisabled(
         ]
       : [],
   });
+  // the service worker keeps the list in memory to skip these sites' requests (src/background)
+  if (!flags.processDisabledSites) await chrome.runtime.sendMessage({ disabledSitesChanged: true }).catch(log.error);
 }
 
 /** Rule changes not sent yet, by id: the rule to add, or null to only remove. The latest change of an id wins. */

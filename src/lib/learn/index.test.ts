@@ -170,6 +170,16 @@ test("clips each site's gradient", async () => {
   expect(norm(two.updates[0])).toBeLessThanOrEqual((2 * 0.001) / 6 + 1e-7);
 });
 
+test("without siteClip, trains on every site's rows together, unclipped", async () => {
+  const update = async (siteClip: number | undefined) => {
+    const l = await learner({ learningRate: 1, siteClip, sliceRows: 2 });
+    await trainOn(l, 6, (i) => (i < 3 ? "a" : "b"));
+    l.trainer.endRound();
+    return l.updates[0];
+  };
+  expect(maxDiff(await update(undefined), await update(1e9))).toBeLessThan(1e-5);
+});
+
 test("sends a clipped update after roundSteps and starts over from global", async () => {
   const l = await learner({ roundSteps: 2, updateClip: 0.01, siteClip: 100 });
   await trainOn(l, 4);

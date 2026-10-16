@@ -260,12 +260,20 @@ export class Trainer {
     this.roundRows += rows.length;
     const training = this.config.trainMode === "training";
 
-    // replayed rows join their site's group, so it is clipped as one
+    // replayed rows join their site's group, so it is clipped as one. Without siteClip, one group: fewer passes
+    const siteClip = this.config.siteClip;
     const bySite = new Map<string, Sample[]>();
-    for (const row of rows) {
-      const group = bySite.get(row.site);
-      if (group) group.push(row);
-      else bySite.set(row.site, [row]);
+
+    if (siteClip === undefined) {
+      bySite.set("", rows);
+    } else {
+      for (const row of rows) {
+        let key = row.site;
+        const group = bySite.get(key);
+
+        if (group) group.push(row);
+        else bySite.set(key, [row]);
+      }
     }
 
     let total: Tensor[] | undefined;
@@ -275,7 +283,6 @@ export class Trainer {
     // a failed pass or step would leak the gradients summed so far. Disposing twice is a no-op
     try {
       for (const group of bySite.values()) {
-        site = undefined;
         for (const slice of chunks(group, this.config.sliceRows)) {
           await yieldToEvents();
 
@@ -293,12 +300,18 @@ export class Trainer {
           site = add(site, result.grads);
         }
 
-        if (this.measureFl) {
-          const norm = globalNorm(site!);
-          record("fl.siteGradNorm", norm);
-          record("fl.siteClipped", Number(norm > this.config.siteClip));
+        if (siteClip === undefined) {
+          total = add(total, site!);
+        } else {
+          if (this.measureFl) {
+            const norm = globalNorm(site!);
+            record("fl.siteGradNorm", norm);
+            record("fl.siteClipped", Number(norm > siteClip));
+          }
+          total = add(total, clip(site!, siteClip));
         }
-        total = add(total, clip(site!, this.config.siteClip));
+        // added to total, which frees it
+        site = undefined;
       }
       // the passes only, without the verdicts in between
       record("learner.train", busy);

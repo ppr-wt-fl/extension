@@ -26,6 +26,7 @@ const flipped = (i: number) => Number(validation.expected_predictions[i] < THRES
 
 beforeAll(async () => {
   await setBackend('wasm')
+  initSink('test', 0)
 })
 
 /** A learner on fresh copies of the model, collecting its round updates. */
@@ -140,7 +141,6 @@ test('frees its tensors, also with the training metrics', async () => {
 })
 
 test('records the training metrics only with measureFl', async () => {
-  initSink('test', 0)
   const names = async () => {
     await new Promise((r) => setTimeout(r))
     return new Set(samples.splice(0).map(([name]) => name))

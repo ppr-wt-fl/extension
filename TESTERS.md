@@ -26,7 +26,7 @@ Blocks ads and trackers in Chrome using ML.
 
 - Open the popup on that site.
 - Click **report breakage**.
-- Click **turn off** to stop blocking on that site.
+- Click **turn off** to stop blocking on that site, then OK to reload the page.
 - Many sites broken? Click **reset rules**.
 
 ## Send logs
@@ -43,7 +43,9 @@ Blocks ads and trackers in Chrome using ML.
 
 ## Privacy
 
-- Logged: timings, counts, memory use, how the model compares to filter lists.
+- Logged: timings, counts, memory use, how the model compares to filter lists, how often you click **turn off**, **turn on** and **report breakage**.
+- Also logged: your browser and its version, operating system and its version, CPU type and core count, roughly how much RAM, the device model if the browser reports it, and the extension and model version.
+- Every entry has a timestamp and a random ID made on install (also in the file name), so your files can be grouped. It isn't linked to your name or account.
 - Not logged: URLs, site names, page content, cookies, anything you type.
 - Nothing is sent automatically. You send the file yourself.
 - The extension re-downloads scripts and pages you visit (with your cookies) to analyze them locally. Nothing from them is stored.

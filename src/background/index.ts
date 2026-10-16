@@ -62,6 +62,12 @@ async function swMeta() {
   };
 }
 
+// the testers' notice, once
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+  if (reason === "install")
+    chrome.tabs.create({ url: chrome.runtime.getURL("src/onboarding/index.html") });
+});
+
 chrome.webRequest.onCompleted.addListener(
   onCompleted,
   { urls: ["<all_urls>"] },

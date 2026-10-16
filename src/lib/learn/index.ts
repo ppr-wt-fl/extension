@@ -146,75 +146,104 @@ export class Learner {
     for (const { submittedAt } of queued) since("learner.queueWait", submittedAt);
     record("learner.batchSize", queued.length);
 
-    // Get samples for training
     const fresh: Row[] = [];
-    for (let index = 0; index < queued.length; index++) {
-      const { sample } = queued[index];
-
+    queued.forEach(({ sample }, index) => {
       if (sample.label !== undefined && this.admit(sample)) {
         fresh.push({ ...sample, label: sample.label, index });
       }
-    }
+    });
+    const fraction = this.config.replayFraction;
+    const replayed = this.replay.sample(
+      Math.round((fresh.length * fraction) / (1 - fraction)),
+    );
+    const rows = [...fresh, ...replayed];
 
-    // Add replay samples
-    const replayFraction = this.config.replayFraction;
-    const replayed = fresh.length
-      ? this.replay.sample(
-          Math.round((fresh.length * replayFraction) / (1 - replayFraction)),
-        )
-      : [];
-    const samples = [...fresh, ...replayed];
-    if (samples.length) record("learner.trainRows", samples.length);
-
-    // Determine how we're running the model
+    // after the first step the local weights have moved away from global
+    const useGlobal = this.config.inferWith === "global" && this.steps > 0;
     const training = this.config.trainMode === "training";
-    let reuseInferencePass = true;
-    if (training && this.modes.modeDependent) {
-      // Dropout etc. were active, the probabilities are noisy
-      reuseInferencePass = false;
-    }
-    if (this.config.inferWith === "global" && this.steps > 0) {
-      // the training pass ran the local weights, which have moved away from global
-      reuseInferencePass = false;
-    }
+    // the training pass classifies the fresh rows, unless dropout etc. made it noisy or it ran the wrong weights
+    const reusePass = !useGlobal && !(training && this.modes.modeDependent);
 
     const probabilities = new Float32Array(queued.length).fill(NaN);
-    let start = now();
-    let loss = 0;
+    const trained = await this.train(rows, training, reusePass, probabilities);
 
-    // Split data into sites
-    let total: Tensor[] | undefined;
-    const bySite = new Map<string, Row[]>();
-    for (const s of samples) {
-      (bySite.get(s.site) ?? bySite.set(s.site, []).get(s.site)!).push(s);
+    let classifier = this.local;
+    if (useGlobal) classifier = this.global;
+    const unclassified = [...probabilities.keys()].filter((i) =>
+      Number.isNaN(probabilities[i]),
+    );
+    const start = now();
+    const predicted = await this.predict(
+      classifier,
+      unclassified.map((i) => queued[i].sample.features),
+    );
+    unclassified.forEach((queueIndex, i) => {
+      probabilities[queueIndex] = predicted[i];
+    });
+    if (unclassified.length) since("learner.infer", start);
+
+    queued.forEach((p, i) => p.resolve(probabilities[i]));
+
+    if (this.measureFl && this.steps > 0) {
+      await this.disagreement(queued, probabilities);
     }
 
+    // no training rows: nothing to update
+    if (!trained) return;
+
+    this.step(trained.total, rows.length);
+    // replayed rows are stored without their position in this batch's queue
+    for (const row of fresh) this.replay.add({ ...row, index: undefined });
+
+    this.steps++;
+    this.roundRows += rows.length;
+    log.debug(
+      `step ${this.steps}/${this.config.roundSteps}: ${queued.length} requests, ${fresh.length} + ${replayed.length} replayed rows, loss ${(trained.loss / rows.length).toFixed(4)}`,
+    );
+    since("learner.batch", batchStart);
+    if (this.steps >= this.config.roundSteps) this.endRound();
+  }
+
+  /**
+   * Sum of the rows' gradients, clipped per site; undefined without rows.
+   * With `reusePass`, writes the fresh rows' probabilities from the same forward pass.
+   */
+  private async train(
+    rows: Row[],
+    training: boolean,
+    reusePass: boolean,
+    probabilities: Float32Array,
+  ): Promise<{ total: Tensor[]; loss: number } | undefined> {
+    if (!rows.length) return undefined;
+    record("learner.trainRows", rows.length);
+    const start = now();
+
+    const bySite = new Map<string, Row[]>();
+    for (const row of rows) {
+      const group = bySite.get(row.site);
+      if (group) group.push(row);
+      else bySite.set(row.site, [row]);
+    }
+
+    let total: Tensor[] | undefined;
+    let loss = 0;
     for (const group of bySite.values()) {
       let site: Tensor[] | undefined;
       for (const chunk of chunks(group, this.config.chunkSize)) {
-        const {
-          grads,
-          probabilities: chunkProbabilities,
-          loss: chunkLoss,
-        } = gradient(
+        const result = gradient(
           this.local,
-          chunk.map((s) => s.features),
-          chunk.map((s) => s.label),
+          chunk.map((r) => r.features),
+          chunk.map((r) => r.label),
           training,
           this.measureFl,
         );
-        loss += chunkLoss;
-
-        if (reuseInferencePass) {
-          for (let i = 0; i < chunk.length; i++) {
-            const { index } = chunk[i];
-
-            if (index !== undefined)
-              probabilities[index] = chunkProbabilities[i];
-          }
+        loss += result.loss;
+        if (reusePass) {
+          chunk.forEach(({ index }, i) => {
+            if (index !== undefined) probabilities[index] = result.probabilities[i];
+          });
         }
-
-        site = add(site, grads);
+        site = add(site, result.grads);
         await yieldToEvents();
       }
 
@@ -225,97 +254,56 @@ export class Learner {
       }
       total = add(total, clip(site!, this.config.siteClip));
     }
-    if (samples.length) since("learner.train", start);
-    if (this.measureFl && samples.length)
-      record("fl.loss", loss / samples.length);
 
-    // classify the requests the training pass gave no verdict for
-    let classifier = this.local;
-    if (this.config.inferWith === "global" && this.steps > 0) {
-      classifier = this.global;
-    }
+    since("learner.train", start);
+    if (this.measureFl) record("fl.loss", loss / rows.length);
+    return { total: total!, loss };
+  }
 
-    // Get samples which still have inference pending (the ones not used for training)
-    const unclassified: number[] = [];
-    for (let i = 0; i < probabilities.length; i++) {
-      if (Number.isNaN(probabilities[i])) unclassified.push(i);
-    }
+  /** SGD step: weight -= learningRate * summed (site-clipped) gradient / rows. Disposes `total`. */
+  private step(total: Tensor[], rows: number): void {
+    const stepSize = this.config.learningRate / rows;
+    this.local.trainableWeights.forEach((weight, i) => {
+      const updated = tidy(() => weight.read().sub(total[i].mul(stepSize)));
+      weight.write(updated);
+      updated.dispose();
+    });
+    dispose(total);
+  }
 
-    // Run unclassified samples
-    // TODO: i'm not convinced this is a super clean way of running it, this sort of split
-    start = now();
-    for (const chunk of chunks(unclassified, this.config.chunkSize)) {
-      const chunkFeatures = chunk.map(
-        (queueIndex) => queued[queueIndex].sample.features,
-      );
-      const chunkProbabilities = predict(classifier, chunkFeatures);
-
-      for (let i = 0; i < chunk.length; i++) {
-        const queueIndex = chunk[i];
-        probabilities[queueIndex] = chunkProbabilities[i];
-      }
+  /** `predict` in chunks, yielding between them. */
+  private async predict(
+    model: LayersModel,
+    features: Float64Array[],
+  ): Promise<Float32Array> {
+    const out = new Float32Array(features.length);
+    let offset = 0;
+    for (const chunk of chunks(features, this.config.chunkSize)) {
+      out.set(predict(model, chunk), offset);
+      offset += chunk.length;
       await yieldToEvents();
     }
-    if (unclassified.length) since("learner.infer", start);
-
-    for (let i = 0; i < queued.length; i++) {
-      queued[i].resolve(probabilities[i]);
-    }
-
-    if (this.measureFl && this.steps > 0) this.disagreement(queued, probabilities);
-
-    // no training rows: nothing to update
-    if (!total) return;
-
-    // SGD step: weight -= learningRate * summed (site-clipped) gradient / rows
-    const stepSize = this.config.learningRate / samples.length;
-    const weights = this.local.trainableWeights;
-    for (let i = 0; i < weights.length; i++) {
-      const weightGradient = total[i];
-      const updated = tidy(() =>
-        weights[i].read().sub(weightGradient.mul(stepSize)),
-      );
-      weights[i].write(updated);
-      updated.dispose();
-    }
-    dispose(total);
-
-    // replayed rows are stored without their position in this batch's queue
-    for (const row of fresh) {
-      this.replay.add({ ...row, index: undefined });
-    }
-
-    this.steps++;
-    this.roundRows += samples.length;
-    log.debug(
-      `step ${this.steps}/${this.config.roundSteps}: ${queued.length} requests, ${fresh.length} + ${replayed.length} replayed rows, loss ${(loss / samples.length).toFixed(4)}`,
-    );
-    since("learner.batch", batchStart);
-    if (this.steps >= this.config.roundSteps) {
-      this.endRound();
-    }
+    return out;
   }
 
   /** Local vs global verdict disagreement on this batch. Costs a forward pass. */
-  private disagreement(queued: Pending[], probabilities: Float32Array): void {
-    const other =
-      this.config.inferWith === "global" ? this.local : this.global;
+  private async disagreement(
+    queued: Pending[],
+    probabilities: Float32Array,
+  ): Promise<void> {
+    let model = this.global;
+    if (this.config.inferWith === "global") model = this.local;
+    const other = await this.predict(
+      model,
+      queued.map((p) => p.sample.features),
+    );
     let flipped = 0;
     let diff = 0;
-    let offset = 0;
-    for (const chunk of chunks(queued, this.config.chunkSize)) {
-      const otherProbabilities = predict(
-        other,
-        chunk.map((p) => p.sample.features),
-      );
-      for (let i = 0; i < chunk.length; i++) {
-        const p = probabilities[offset + i];
-        const q = otherProbabilities[i];
-        if (p >= THRESHOLD !== q >= THRESHOLD) flipped++;
-        diff += Math.abs(p - q);
-      }
-      offset += chunk.length;
-    }
+    other.forEach((q, i) => {
+      const p = probabilities[i];
+      if (p >= THRESHOLD !== q >= THRESHOLD) flipped++;
+      diff += Math.abs(p - q);
+    });
     record("fl.disagreement", flipped / queued.length);
     record("fl.probabilityDiff", diff / queued.length);
   }
@@ -382,17 +370,17 @@ export class Learner {
   }
 }
 
+/** Joint L2 norm, to call inside `tidy`. */
+function l2(tensors: Tensor[]): Tensor {
+  return tensors
+    .map((t) => t.square().sum())
+    .reduce((a, b) => a.add(b))
+    .sqrt();
+}
+
 /** Joint L2 norm. Doesn't dispose input. */
 function globalNorm(tensors: Tensor[]): number {
-  const norm = tidy(() =>
-    tensors
-      .map((t) => t.square().sum())
-      .reduce((a, b) => a.add(b))
-      .sqrt(),
-  );
-  const value = norm.dataSync()[0];
-  norm.dispose();
-  return value;
+  return tidy(() => l2(tensors).dataSync()[0]);
 }
 
 /** Sum of two gradients, disposing both. */
@@ -406,11 +394,7 @@ function add(a: Tensor[] | undefined, b: Tensor[]): Tensor[] {
 /** The tensors scaled to a joint L2 norm of at most `max`, disposing the input. */
 function clip(tensors: Tensor[], max: number): Tensor[] {
   const clipped = tidy(() => {
-    const norm = tensors
-      .map((t) => t.square().sum())
-      .reduce((a, b) => a.add(b))
-      .sqrt();
-    const scale = norm.maximum(max).reciprocal().mul(max);
+    const scale = l2(tensors).maximum(max).reciprocal().mul(max);
     return tensors.map((t) => t.mul(scale));
   });
   dispose(tensors);

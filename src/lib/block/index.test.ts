@@ -1,5 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { applyRule, blockable, installedRules, refererRule, rule, ruleKey, siteDisabled } from '.'
+import { MAX_RULES } from '@/offscreen/rules'
+import { applyRule, blockable, installedRules, refererRule, rule, ruleKey, setSiteDisabled, siteDisabled } from '.'
 
 const runtime = { getURL: (path: string) => `chrome-extension://ours/${path}` }
 afterEach(() => vi.unstubAllGlobals())
@@ -96,7 +97,7 @@ test('removeAllRules drops queued changes and removes every block rule, not the 
     runtime,
     declarativeNetRequest: {
       RuleActionType: { BLOCK: 'block' },
-      getDynamicRules: async () => [rule(1, req), rule(4, req), { ...rule(5, req), id: 2 ** 31 - 1 }],
+      getDynamicRules: async () => [rule(1, req), rule(4, req), { ...rule(5, req), id: 2 ** 31 - 1 }, { ...rule(6, req), id: 2 ** 31 - 2 }],
       updateDynamicRules,
     },
   })
@@ -135,4 +136,39 @@ test('refererRule only matches our own refetch of the URL', () => {
   const r = refererRule(3, req.url, 'https://news.example/')
   expect(r.action.requestHeaders).toEqual([{ header: 'referer', operation: 'set', value: 'https://news.example/' }])
   expect(r.condition).toMatchObject({ urlFilter: `|${req.url}|`, tabIds: [-1], initiatorDomains: ['ours'] })
+})
+
+test('setSiteDisabled also allows what the sites start outside a frame, e.g. their service workers', async () => {
+  const updateDynamicRules = vi.fn(async (_: chrome.declarativeNetRequest.UpdateRuleOptions) => {})
+  vi.stubGlobal('chrome', {
+    declarativeNetRequest: {
+      RuleActionType: { ALLOW: 'allow', ALLOW_ALL_REQUESTS: 'allowAllRequests' },
+      ResourceType: { MAIN_FRAME: 'main_frame' },
+      getDynamicRules: async () => [],
+      updateDynamicRules,
+    },
+  })
+  await setSiteDisabled('news.example', true)
+  const [{ removeRuleIds, addRules }] = updateDynamicRules.mock.calls[0]
+  expect(removeRuleIds).toEqual([2 ** 31 - 1, 2 ** 31 - 2])
+  expect(addRules?.find((r) => r.action.type === 'allow')?.condition).toEqual({ initiatorDomains: ['news.example'] })
+  await setSiteDisabled('news.example', false)
+  expect(updateDynamicRules.mock.calls[1][0].addRules).toEqual([])
+})
+
+test('installedRules removes the oldest block rules past MAX_RULES', async () => {
+  const updateDynamicRules = vi.fn(async (_: chrome.declarativeNetRequest.UpdateRuleOptions) => {})
+  const chromeStub = {
+    runtime,
+    declarativeNetRequest: {
+      RuleActionType: { BLOCK: 'block' },
+      // newest first, Chrome's order isn't by id
+      getDynamicRules: async () => [{ id: 2 ** 31 - 1, priority: 2, action: { type: 'allowAllRequests' }, condition: {} }, ...blocks.reverse()],
+      updateDynamicRules,
+    },
+  }
+  vi.stubGlobal('chrome', chromeStub)
+  const blocks = Array.from({ length: MAX_RULES + 2 }, (_, i) => rule(i + 1, { ...req, url: `${req.url}${i}` }))
+  expect(await installedRules()).toHaveLength(MAX_RULES)
+  expect(updateDynamicRules).toHaveBeenCalledWith({ removeRuleIds: [1, 2] })
 })

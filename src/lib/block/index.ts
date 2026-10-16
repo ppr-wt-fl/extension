@@ -1,5 +1,5 @@
 import type { RequestInfo } from "@/lib/features";
-import type { RuleChange } from "@/offscreen/rules";
+import { MAX_RULES, type RuleChange } from "@/offscreen/rules";
 import { logger } from "@/lib/log";
 import { count, now, since } from "@/lib/perf";
 
@@ -96,15 +96,23 @@ export function rule(id: number, req: RequestInfo): Rule {
 
 /**
  * Installed rules by key, for the worker to continue from. Inverse of `rule`. Removes rules of our own files, which
- * older versions installed: they never match and only take up rule slots.
+ * older versions installed: they never match and only take up rule slots. Also removes the oldest block rules past
+ * `MAX_RULES`, which older versions with fewer allow rules filled up to.
  */
 export async function installedRules(): Promise<{ key: string; id: number }[]> {
   const all = await chrome.declarativeNetRequest.getDynamicRules();
-  const bad = all.filter((r) =>
+  const own = all.filter((r) =>
     isOwnUrl(r.condition.urlFilter?.slice(1) ?? ""),
   );
+  const blocks = all
+    .filter((r) => r.condition.urlFilter && !own.includes(r))
+    .sort((a, b) => a.id - b.id);
+  const bad = [
+    ...own,
+    ...blocks.slice(0, Math.max(0, blocks.length - MAX_RULES)),
+  ];
   if (bad.length) {
-    log.info("removing rules of own files:", bad.length);
+    log.info("removing rules of own files or past the limit:", bad.length);
     await chrome.declarativeNetRequest.updateDynamicRules({
       removeRuleIds: bad.map((r) => r.id),
     });
@@ -129,11 +137,12 @@ export async function installedRules(): Promise<{ key: string; id: number }[]> {
 }
 
 /**
- * Id of the one rule that turns blocking off on the sites the user picked in the popup. Block rule ids count up from 1
- * (src/offscreen/rules.ts) and never reach this. `installedRules` skips it as it has no urlFilter, so the worker never
- * learns about it.
+ * Ids of the two rules that turn blocking off on the sites the user picked in the popup. Block rule ids count up from 1
+ * (src/offscreen/rules.ts) and never reach these. `installedRules` skips them as they have no urlFilter, so the worker
+ * never learns about them.
  */
 const ALLOW_RULE_ID = 2 ** 31 - 1;
+const ALLOW_WORKERS_RULE_ID = 2 ** 31 - 2;
 
 /** Hostnames blocking is off on. Stored in the allow rule itself, so the rule can't get out of sync with a list. */
 export async function disabledSites(): Promise<string[]> {
@@ -172,8 +181,8 @@ export async function setSiteDisabled(
   }
 
   await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds: [ALLOW_RULE_ID],
-    // requestDomains can't be empty: no sites, no rule
+    removeRuleIds: [ALLOW_RULE_ID, ALLOW_WORKERS_RULE_ID],
+    // requestDomains can't be empty: no sites, no rules
     addRules: sites.length
       ? [
           {
@@ -191,6 +200,14 @@ export async function setSiteDisabled(
                 chrome.declarativeNetRequest.ResourceType.MAIN_FRAME,
               ],
             },
+          },
+          {
+            id: ALLOW_WORKERS_RULE_ID,
+            // the site's service and shared workers belong to no frame, so allowAllRequests misses their requests.
+            // Also allows the site's own requests inside iframes on other sites
+            priority: 2,
+            action: { type: chrome.declarativeNetRequest.RuleActionType.ALLOW },
+            condition: { initiatorDomains: sites },
           },
         ]
       : [],
@@ -267,7 +284,7 @@ export function removeAllRules(): Promise<void> {
     const ids = (await chrome.declarativeNetRequest.getDynamicRules())
       .map((r) => r.id)
       // the user's disabled sites aren't block rules
-      .filter((id) => id !== ALLOW_RULE_ID);
+      .filter((id) => id !== ALLOW_RULE_ID && id !== ALLOW_WORKERS_RULE_ID);
     await chrome.declarativeNetRequest.updateDynamicRules({
       removeRuleIds: ids,
     });

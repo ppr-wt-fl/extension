@@ -7,9 +7,8 @@ import { inspectModes, loadModel, predict, THRESHOLD } from ".";
 
 console.warn(`Using a decission threshold of ${THRESHOLD}`);
 
-// FIXME: use the copy of the model in this repo once it's there (see src/lib/collect/index.ts)
 const dir = new URL(
-  "../../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/",
+  "./adflush/",
   import.meta.url,
 );
 

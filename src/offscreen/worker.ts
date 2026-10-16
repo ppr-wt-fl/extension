@@ -19,10 +19,9 @@ import { logger } from "@/lib/log";
 import { count, gauge, now, initSink, record, since } from "@/lib/perf";
 import { writeMeta } from "@/lib/perf/outbox";
 import { restoreRules, type RuleChange, ruleChange, rules } from "./rules";
-// FIXME: copy the model into this repo instead of importing it from the robustness-evaluation run
-import modelJson from "../../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/model.json";
-import featureOrder from "../../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/feature_order.json";
-import weightsUrl from "../../../../robustness-evaluation/AdFlushAutokeras/source/autokeras/runs/2026-10-01_19-33-34/model/AdFlush_autokeras_tfjs/group1-shard1of1.bin?url";
+import modelJson from "../model/adflush/model.json";
+import featureOrder from "../model/adflush/feature_order.json";
+import weightsUrl from "../model/adflush/group1-shard1of1.bin?url";
 
 // Holds the state that should outlive the service worker, which Chrome stops when idle: the learner and the
 // block rules' ids. Lost when the browser or the extension restarts, except the rules (src/lib/block).

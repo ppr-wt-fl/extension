@@ -28,8 +28,27 @@ bun run test             # vitest, includes build:features
 Load the extension in Chrome: open `chrome://extensions/`, enable "Developer mode" and load the unpacked `dist` directory.
 
 Release for testers: bump `version` in `package.json`, run `bun run build` and send
-`release/crx-blocker-extension-<version>.zip`. Build on your own machine: `src/offscreen/worker.ts` imports the model
-from `../../../../robustness-evaluation/AdFlushAutokeras/...`, outside this repository.
+`release/crx-blocker-extension-<version>.zip`. The model is a copy of the robustness-evaluation run
+`AdFlushAutokeras/.../runs/2026-10-01_19-33-34` in `src/model/adflush/`.
+
+## Reproducible build
+
+The `Dockerfile` pins every tool (Rust and Bun images by digest, wasm-bindgen 0.2.126, `bun.lock`, both
+`Cargo.lock`), so a release can be rebuilt from its git tag alone:
+
+```sh
+git checkout v<version>
+docker build --output release .   # runs the tests too, writes release/crx-blocker-extension-<version>.zip
+```
+
+Pushing a tag `v<version>` (equal to `version` in `package.json`) runs the same build on GitHub Actions
+(`.github/workflows/release.yml`) and publishes the zip and its `SHA256SUMS` as a GitHub Release.
+
+The zip stores file timestamps, so its hash differs between builds. Compare the contents instead:
+
+```sh
+mkdir a b && unzip -q first.zip -d a && unzip -q second.zip -d b && diff -r a b && echo identical
+```
 
 ## Project structure
 

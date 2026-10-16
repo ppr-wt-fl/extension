@@ -144,7 +144,9 @@ export async function exportOutbox(
   };
   // the transaction, not request.onerror: a throw in onsuccess aborts it without firing onerror, hanging the export
   await done(tx);
-  const gzip = new Blob(parts).stream().pipeThrough(new CompressionStream("gzip"));
+  const gzip = new Blob(parts)
+    .stream()
+    .pipeThrough(new CompressionStream("gzip"));
   return {
     blob: await new Response(gzip).blob(),
     lastKey,

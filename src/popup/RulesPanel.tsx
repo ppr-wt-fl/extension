@@ -3,7 +3,13 @@ import { loadRules, resetRules } from "./data";
 import { ConfirmButton } from "./ConfirmButton";
 
 /** Block rules in use, and a reset. Reloads on `tick`; `onChange` asks the popup to reload everything. */
-export function RulesPanel({ tick, onChange }: { tick: number; onChange: () => void }) {
+export function RulesPanel({
+  tick,
+  onChange,
+}: {
+  tick: number;
+  onChange: () => void;
+}) {
   const [rules, setRules] = useState<Awaited<ReturnType<typeof loadRules>>>();
 
   useEffect(() => {

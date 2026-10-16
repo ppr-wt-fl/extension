@@ -5,15 +5,26 @@
     <meta charset="UTF-8" />
     <title>About this extension</title>
     <style>
-      body { font: 15px/1.5 system-ui, sans-serif; max-width: 40em; margin: 2em auto; padding: 0 1em; }
-      h2 { font-size: 1.1em; margin-top: 1.5em; }
+      body {
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+        max-width: 40em;
+        margin: 2em auto;
+        padding: 0 1em;
+      }
+      h2 {
+        font-size: 1.1em;
+        margin-top: 1.5em;
+      }
     </style>
   </head>
   <body>
     <h1>About this extension</h1>
     <p>
-      This is a research prototype for a master thesis at TU Berlin on blocking ads and trackers with machine
-      learning. Thank you for testing it. Please read this page before you browse.
+      This is a research prototype for a master thesis at TU Berlin on blocking
+      ads and trackers with machine learning. Thank you for testing it. Please
+      read this page before you browse.
     </p>
 
     <h2>It really blocks</h2>
@@ -27,7 +38,10 @@
     <ul>
       <li>Open the popup on that site.</li>
       <li>Click <b>report breakage</b>.</li>
-      <li>Click <b>turn off</b> to stop blocking on that site, then OK to reload the page.</li>
+      <li>
+        Click <b>turn off</b> to stop blocking on that site, then OK to reload
+        the page.
+      </li>
       <li>Many sites broken? Click <b>reset rules</b>.</li>
     </ul>
 
@@ -35,7 +49,10 @@
     <ul>
       <li>Open the popup</li>
       <li>Click <b>export</b></li>
-      <li>Send the <code>perf-*.ndjson.gz</code> files from your downloads (a big export is split into several).</li>
+      <li>
+        Send the <code>perf-*.ndjson.gz</code> files from your downloads (a big
+        export is split into several).
+      </li>
     </ul>
     <p><b>Warning:</b> Closing the popup cancels the download</p>
     <p><b>Warning:</b> Never click <b>clear all</b> unless asked.</p>
@@ -43,29 +60,37 @@
     <h2>Privacy</h2>
     <ul>
       <li>
-        Logged: timings, counts, memory use, how the model compares to filter lists, how often you click <b>turn off</b>,
-        <b>turn on</b> and <b>report breakage</b>.
+        Logged: timings, counts, memory use, how the model compares to filter
+        lists, how often you click
+        <b>turn off</b>, <b>turn on</b> and <b>report breakage</b>.
       </li>
       <li>
-        Also logged: your browser and its version, operating system and its version, CPU type and core count, roughly
-        how much RAM, the device model if the browser reports it, and the extension and model version.
+        Also logged: your browser and its version, operating system and its
+        version, CPU type and core count, roughly how much RAM, the device model
+        if the browser reports it, and the extension and model version.
       </li>
       <li>
-        Every entry has a timestamp and a random ID made on install (also in the file name), so your files can be
-        grouped. It isn't linked to your name or account.
+        Every entry has a timestamp and a random ID made on install (also in the
+        file name), so your files can be grouped. It isn't linked to your name
+        or account.
       </li>
-      <li>Not logged: URLs, site names, page content, cookies, anything you type.</li>
+      <li>
+        Not logged: URLs, site names, page content, cookies, anything you type.
+      </li>
       <li>Nothing is sent automatically. You send the file yourself.</li>
       <li>
-        The extension re-downloads scripts and pages you visit (with your cookies) to analyze them locally. Nothing
-        from them is stored.
+        The extension re-downloads scripts and pages you visit (with your
+        cookies) to analyze them locally. Nothing from them is stored.
       </li>
     </ul>
 
     <h2>Uninstall</h2>
     <ul>
       <li>Send logs one last time plss.</li>
-      <li>In <code>chrome://extensions</code>, click <b>Remove</b> on "blocker-extension".</li>
+      <li>
+        In <code>chrome://extensions</code>, click <b>Remove</b> on
+        "blocker-extension".
+      </li>
       <li>Delete the unzipped folder.</li>
     </ul>
 

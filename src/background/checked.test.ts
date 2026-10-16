@@ -36,7 +36,9 @@ test("tier: fresh, then validate for bodies, then full past maxAgeMs", async () 
   expect(c.tier(key, true, pastFresh)).toBe("needs-body-validation");
   // URL-only: its features can't have changed
   expect(c.tier(key, false, pastFresh)).toBe("fresh");
-  expect(c.tier(key, false, t + flags.cache.maxAgeMs / 1000 + 1)).toBe("run-from-scratch");
+  expect(c.tier(key, false, t + flags.cache.maxAgeMs / 1000 + 1)).toBe(
+    "run-from-scratch",
+  );
   c.pending.add(key);
   expect(c.tier(key, true, t)).toBe("inflight");
 });

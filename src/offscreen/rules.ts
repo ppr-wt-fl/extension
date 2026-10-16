@@ -37,7 +37,10 @@ export function restoreRules(installed: { key: string; id: number }[]): void {
 }
 
 /** The rule change a request's decision needs, if any. Past `MAX_RULES`, an add evicts the oldest rule. */
-export function ruleChange(key: string, block: boolean): RuleChange | undefined {
+export function ruleChange(
+  key: string,
+  block: boolean,
+): RuleChange | undefined {
   const id = rules.get(key);
   if (block && id === undefined) {
     let evict: number | undefined;
@@ -56,4 +59,3 @@ export function ruleChange(key: string, block: boolean): RuleChange | undefined 
     return { action: "remove", id };
   }
 }
-

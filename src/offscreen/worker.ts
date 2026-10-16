@@ -152,9 +152,7 @@ const learnerPromise = (async () => {
 
 /** The worker's half of the environment (the SW writes the rest), installId added at export. */
 async function workerMeta(weights: ArrayBuffer) {
-  const digest = new Uint8Array(
-    await crypto.subtle.digest("SHA-256", weights),
-  );
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", weights));
   return {
     backend: getBackend(),
     simd: await env().getAsync("WASM_HAS_SIMD_SUPPORT"),

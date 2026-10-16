@@ -13,7 +13,9 @@ export function hostOf(tab: chrome.tabs.Tab): string | undefined {
 }
 
 /** Blocked requests on the tab since its last page load, undefined when Chrome won't tell. */
-export async function loadBlocked(tab: chrome.tabs.Tab): Promise<number | undefined> {
+export async function loadBlocked(
+  tab: chrome.tabs.Tab,
+): Promise<number | undefined> {
   if (tab.id === undefined) return undefined;
   // Chrome keeps the matches of the tab's current document, so navigation, bfcache and prerender are handled
   // rejects when rate limited or activeTab isn't granted (some chrome:// pages)

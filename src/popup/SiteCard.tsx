@@ -4,7 +4,13 @@ import { ConfirmButton } from "./ConfirmButton";
 import { disabledSites, setSiteDisabled, siteDisabled } from "@/lib/block";
 
 /** Blocking switch for the tab's site, plus a breakage report. */
-export function SiteCard({ tab, host }: { tab: chrome.tabs.Tab; host: string }) {
+export function SiteCard({
+  tab,
+  host,
+}: {
+  tab: chrome.tabs.Tab;
+  host: string;
+}) {
   const [disabled, setDisabled] = useState<boolean>();
   const [changed, setChanged] = useState(false);
   const [reported, setReported] = useState(false);

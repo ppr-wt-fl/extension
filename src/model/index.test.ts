@@ -7,10 +7,7 @@ import { inspectModes, loadModel, predict, THRESHOLD } from ".";
 
 console.warn(`Using a decission threshold of ${THRESHOLD}`);
 
-const dir = new URL(
-  "./adflush/",
-  import.meta.url,
-);
+const dir = new URL("./adflush/", import.meta.url);
 
 /** Rows of the validation set with the predictions of the Keras model, exported by train_autokeras.py. */
 const validation: {

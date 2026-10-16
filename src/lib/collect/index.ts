@@ -159,7 +159,11 @@ export async function observe(obs: Observation): Promise<boolean> {
     request: ruleKey(obs.req),
     blockable: blockable(obs.req),
     source: obs.source,
-    req: { url: obs.req.url, topLevelUrl: obs.req.topLevelUrl, type: obs.req.type },
+    req: {
+      url: obs.req.url,
+      topLevelUrl: obs.req.topLevelUrl,
+      type: obs.req.type,
+    },
     features: [...features],
     site: new URL(obs.req.topLevelUrl).hostname,
     label: await label(obs.req),

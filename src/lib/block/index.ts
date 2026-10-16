@@ -212,7 +212,10 @@ export async function setSiteDisabled(
       : [],
   });
   // the service worker keeps the list in memory to skip these sites' requests (src/background)
-  if (!flags.processDisabledSites) await chrome.runtime.sendMessage({ disabledSitesChanged: true }).catch(log.error);
+  if (!flags.processDisabledSites)
+    await chrome.runtime
+      .sendMessage({ disabledSitesChanged: true })
+      .catch(log.error);
 }
 
 /** Rule changes not sent yet, by id: the rule to add, or null to only remove. The latest change of an id wins. */

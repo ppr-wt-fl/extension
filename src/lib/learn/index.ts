@@ -143,7 +143,8 @@ export class Learner {
   private async run(queued: Pending[]): Promise<void> {
     const batchStart = now();
     // incl. idleMs + earlier batches
-    for (const { submittedAt } of queued) since("learner.queueWait", submittedAt);
+    for (const { submittedAt } of queued)
+      since("learner.queueWait", submittedAt);
     record("learner.batchSize", queued.length);
 
     const fresh: Row[] = [];
@@ -240,7 +241,8 @@ export class Learner {
         loss += result.loss;
         if (reusePass) {
           chunk.forEach(({ index }, i) => {
-            if (index !== undefined) probabilities[index] = result.probabilities[i];
+            if (index !== undefined)
+              probabilities[index] = result.probabilities[i];
           });
         }
         site = add(site, result.grads);
@@ -324,7 +326,9 @@ export class Learner {
     if (admitted >= this.config.perSiteLimit) {
       // once per site and round
       if (admitted === this.config.perSiteLimit) {
-        log.debug(`${sample.site} reached perSiteLimit, no more training rows this round`);
+        log.debug(
+          `${sample.site} reached perSiteLimit, no more training rows this round`,
+        );
         this.perSite.set(sample.site, admitted + 1);
       }
       if (this.measureFl) count("fl.rejectedPerSite");
@@ -359,7 +363,9 @@ export class Learner {
       record("fl.updateBytes", data.byteLength);
     }
     // TODO(secret sharing): time share + upload (fl.shareMs, fl.uploadMs)
-    log.info(`round over: ${this.steps} steps, ${this.roundRows} rows, ${((now() - this.roundStart) / 1000).toFixed(1)}s`);
+    log.info(
+      `round over: ${this.steps} steps, ${this.roundRows} rows, ${((now() - this.roundStart) / 1000).toFixed(1)}s`,
+    );
     this.sendUpdate(data);
     this.roundStart = now();
     this.roundRows = 0;

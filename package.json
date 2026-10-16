@@ -1,9 +1,9 @@
 {
   "name": "blocker-extension",
-  "type": "module",
   "version": "0.1.0",
   "private": true,
   "description": "Research prototype: ML-based ad and tracker blocking (master thesis)",
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "bun run build:features && bun run build:filterlists && tsc -b && vite build",

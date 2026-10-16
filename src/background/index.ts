@@ -9,7 +9,12 @@ import { flags } from "@/lib/flags";
 import { count, gauge, now, initSink, since } from "@/lib/perf";
 import { writeMeta } from "@/lib/perf/outbox";
 import { featuresWasmBytes } from "@/lib/features";
-import { disabledSites, removeAllRules, ruleKey, siteDisabled } from "@/lib/block";
+import {
+  disabledSites,
+  removeAllRules,
+  ruleKey,
+  siteDisabled,
+} from "@/lib/block";
 import { logger } from "@/lib/log";
 import * as checked from "./checked";
 import { refetch } from "./refetch";
@@ -65,7 +70,9 @@ async function swMeta() {
 // the testers' notice, once
 chrome.runtime.onInstalled.addListener(({ reason }) => {
   if (reason === "install")
-    chrome.tabs.create({ url: chrome.runtime.getURL("src/onboarding/index.html") });
+    chrome.tabs.create({
+      url: chrome.runtime.getURL("src/onboarding/index.html"),
+    });
 });
 
 // The sites the user turned the extension off on, read on every service worker start and again when the popup
@@ -74,7 +81,8 @@ let disabled: Promise<string[]> = Promise.resolve([]);
 if (!flags.processDisabledSites) {
   disabled = disabledSites().catch(() => []);
   chrome.runtime.onMessage.addListener((message) => {
-    if (message?.disabledSitesChanged === true) disabled = disabledSites().catch(() => []);
+    if (message?.disabledSitesChanged === true)
+      disabled = disabledSites().catch(() => []);
   });
 }
 
@@ -108,8 +116,13 @@ async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
     if (!flags.processDisabledSites) {
       const sites = await disabled;
       let initiator = "";
-      if (details.type !== "main_frame") initiator = URL.parse(details.initiator ?? "")?.hostname ?? "";
-      if (siteDisabled(sites, new URL(top).hostname) || siteDisabled(sites, initiator)) return;
+      if (details.type !== "main_frame")
+        initiator = URL.parse(details.initiator ?? "")?.hostname ?? "";
+      if (
+        siteDisabled(sites, new URL(top).hostname) ||
+        siteDisabled(sites, initiator)
+      )
+        return;
     }
 
     const observation: Observation = {
@@ -137,7 +150,9 @@ async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
     const hasBody = BODY_TYPES.has(details.type) && details.method === "GET";
 
     if (!flags.cache.enabled) {
-      const body = hasBody ? await refetch(details.url, details.initiator) : undefined;
+      const body = hasBody
+        ? await refetch(details.url, details.initiator)
+        : undefined;
       return await classify(body);
     }
 
@@ -177,7 +192,9 @@ async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
       }
 
       // Refetch the body, the model needs it anyway. Same hash as when classified: unchanged, skip the model
-      const bodyBytes = hasBody ? await refetch(details.url, details.initiator) : undefined;
+      const bodyBytes = hasBody
+        ? await refetch(details.url, details.initiator)
+        : undefined;
 
       // a failed refetch gives 0, which never matches a stored body
       const bodyHash = bodyBytes ? await checked.hash30(bodyBytes) : 0;

@@ -33,7 +33,10 @@ export const pending = new Set<number>();
  * - run-from-scratch: classify it, it's new or older than `maxAgeMs`
  */
 export type Tier =
-  "inflight" | "fresh" | "needs-body-validation" | "run-from-scratch";
+  | "inflight"
+  | "fresh"
+  | "needs-body-validation"
+  | "run-from-scratch";
 
 export function tier(key: number, hasBody: boolean, t = nowS()): Tier {
   if (pending.has(key)) return "inflight";

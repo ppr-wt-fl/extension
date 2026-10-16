@@ -144,7 +144,8 @@ export class Classifier {
 /**
  * Buffers labeled samples and takes one SGD step on every `miniBatchSize` of them (plus replayed ones), in slices of
  * `sliceRows` rows with `beforeSlice` (classifying the waiting requests) before each.
- * Every `roundSteps` steps it sends the clipped local - global update and starts over from global.
+ * Every `roundSteps` steps it trains `epochs - 1` more times on the round's rows, sends the clipped local - global
+ * update and starts over from global.
  * Everything is in memory (src/offscreen/worker.ts): lost when the browser or the extension restarts, so are the
  * buffered rows short of a step.
  */
@@ -160,6 +161,8 @@ export class Trainer {
   private roundStart = now();
   /** Training rows this round */
   private roundRows = 0;
+  /** Fresh rows this round, for the later epochs */
+  private roundSamples: Sample[] = [];
   readonly modes: { modeDependent: boolean; stateful: boolean };
 
   /** `global` and `local` are two copies of the same model, `local` is trained. */
@@ -226,7 +229,35 @@ export class Trainer {
       Math.round((fresh.length * fraction) / (1 - fraction)),
     );
     const rows = [...fresh, ...replayed];
+    const loss = await this.descend(rows);
+    for (const row of fresh) {
+      this.replay.add(row);
+      this.roundSamples.push(row);
+    }
+
+    this.steps++;
+    log.debug(
+      `step ${this.steps}/${this.config.roundSteps}: ${fresh.length} + ${replayed.length} replayed rows, loss ${(loss / rows.length).toFixed(4)}`,
+    );
+    since("learner.batch", stepStart);
+    if (this.steps < this.config.roundSteps) return;
+
+    // no replay: shuffling already mixes the round's sites into each mini-batch
+    for (let epoch = 1; epoch < this.config.epochs; epoch++) {
+      for (const batch of chunks(
+        shuffle(this.roundSamples),
+        this.config.miniBatchSize,
+      )) {
+        await this.descend(batch);
+      }
+    }
+    this.endRound();
+  }
+
+  /** One SGD step on the rows, clipped per site. Returns the summed loss, with `measureFl`. */
+  private async descend(rows: Sample[]): Promise<number> {
     record("learner.trainRows", rows.length);
+    this.roundRows += rows.length;
     const training = this.config.trainMode === "training";
 
     // replayed rows join their site's group, so it is clipped as one
@@ -277,15 +308,7 @@ export class Trainer {
     } finally {
       dispose([...(site ?? []), ...(total ?? [])]);
     }
-    for (const row of fresh) this.replay.add(row);
-
-    this.steps++;
-    this.roundRows += rows.length;
-    log.debug(
-      `step ${this.steps}/${this.config.roundSteps}: ${fresh.length} + ${replayed.length} replayed rows, loss ${(loss / rows.length).toFixed(4)}`,
-    );
-    since("learner.batch", stepStart);
-    if (this.steps >= this.config.roundSteps) this.endRound();
+    return loss;
   }
 
   /** SGD step: weight -= learningRate * summed (site-clipped) gradient / rows. Disposes `total`. */
@@ -363,6 +386,7 @@ export class Trainer {
     this.steps = 0;
     this.perSite.clear();
     this.trained.clear();
+    this.roundSamples = [];
   }
 }
 
@@ -427,12 +451,17 @@ export class Reservoir<T> {
 
   /** `k` distinct items, fewer if it holds fewer. */
   sample(k: number): T[] {
-    const pool = [...this.items];
-    const n = Math.min(k, pool.length);
-    for (let i = 0; i < n; i++) {
-      const j = i + Math.floor(Math.random() * (pool.length - i));
-      [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
-    return pool.slice(0, n);
+    return shuffle(this.items, k);
   }
+}
+
+/** `k` (default all) distinct items in random order, a partial Fisher-Yates shuffle of a copy. */
+function shuffle<T>(items: readonly T[], k = items.length): T[] {
+  const pool = [...items];
+  const n = Math.min(k, pool.length);
+  for (let i = 0; i < n; i++) {
+    const j = i + Math.floor(Math.random() * (pool.length - i));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, n);
 }

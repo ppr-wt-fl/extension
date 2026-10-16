@@ -42,6 +42,12 @@ export const flags = {
     updateClip: 10,
     /** SGD steps per round: ~1300 fresh rows, at most 100 per site (perSiteLimit), so a round spans >= 13 sites. */
     roundSteps: 20,
+    /**
+     * Passes over the round's fresh rows before its update is sent (FedAvg's local epochs). The first is the steps
+     * as rows arrive, the others reshuffle the round's rows into mini-batches at its end. Each costs another round
+     * of compute, and fits the local model closer to this user's browsing.
+     */
+    epochs: 1,
   },
   /** Skipping requests already classified "allow" (src/background/checked.ts). */
   cache: {

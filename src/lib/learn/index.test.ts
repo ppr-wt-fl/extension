@@ -181,6 +181,23 @@ test("sends a clipped update after roundSteps and starts over from global", asyn
   expect(l.updates[1].every((v) => v === 0)).toBe(true);
 });
 
+test("epochs train on the round's rows again before sending", async () => {
+  const update = async (epochs: number) => {
+    const l = await learner({
+      epochs,
+      roundSteps: 1,
+      learningRate: 1e-4,
+      siteClip: 100,
+      updateClip: 100,
+    });
+    await trainOn(l, 4);
+    expect(l.updates).toHaveLength(1);
+    return l.updates[0];
+  };
+  // a small step barely changes the gradient, so a second epoch about doubles the update
+  expect(norm(await update(2)) / norm(await update(1))).toBeCloseTo(2, 1);
+});
+
 test("trains on a row once per round, and at most perSiteLimit per site", async () => {
   const l = await learner({ perSiteLimit: 1, miniBatchSize: 1 });
   // only the first is admitted: the second is the same row from another site, the others hit the site's limit

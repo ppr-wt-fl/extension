@@ -15,6 +15,7 @@
     "instrumented-chromium": "chromium --remote-debugging-port=9222 --user-data-dir=$HOME/.cache/blocker-chrome --load-extension=$PWD/dist --enable-logging=stderr --v=0"
   },
   "dependencies": {
+    "@picocss/pico": "^2.1.1",
     "@tensorflow/tfjs": "^4.22.0",
     "@tensorflow/tfjs-backend-wasm": "^4.22.0",
     "react": "^19.2.4",

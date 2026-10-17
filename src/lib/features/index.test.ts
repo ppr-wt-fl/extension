@@ -55,16 +55,19 @@ test("featuresWasmBytes is the linear memory, in 64 KiB pages", () => {
 });
 
 // acorn-loose ASTs skip oxc, the parser that overflows
-test.skipIf(import.meta.env.ACORN)("recovers after deeply nested JS overflows the wasm stack", () => {
-  const baseline = extract(presets.adflush, request);
-  for (const body of [
-    "(".repeat(1000) + "1" + ")".repeat(1000),
-    "[".repeat(2000),
-  ]) {
-    expect(() => extract(presets.adflush, { ...request, body })).toThrow();
-    expect(extract(presets.adflush, request)).toEqual(baseline);
-  }
-});
+test.skipIf(import.meta.env.ACORN)(
+  "recovers after deeply nested JS overflows the wasm stack",
+  () => {
+    const baseline = extract(presets.adflush, request);
+    for (const body of [
+      "(".repeat(1000) + "1" + ")".repeat(1000),
+      "[".repeat(2000),
+    ]) {
+      expect(() => extract(presets.adflush, { ...request, body })).toThrow();
+      expect(extract(presets.adflush, request)).toEqual(baseline);
+    }
+  },
+);
 
 test("class fields zero the JS features and set unknownNodeType", () => {
   const names = ["avg_charperline", "num_get_cookie"];

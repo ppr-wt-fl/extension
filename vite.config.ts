@@ -26,7 +26,9 @@ export default defineConfig({
   build: {
     rollupOptions: {
       // acorn and acorn-loose don't declare sideEffects: false, so without flags.acorn the unused import would stay
-      treeshake: { moduleSideEffects: (id) => !/\/node_modules\/acorn(-loose)?\//.test(id) },
+      treeshake: {
+        moduleSideEffects: (id) => !/\/node_modules\/acorn(-loose)?\//.test(id),
+      },
       // not in the manifest: the service worker opens them (chrome.offscreen, chrome.tabs on install)
       input: {
         offscreen: "src/offscreen/index.html",

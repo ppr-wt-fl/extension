@@ -72,15 +72,13 @@ async function trainOn(
   from = 0,
 ) {
   l.config.miniBatchSize = n;
-  const steps = rows
-    .slice(from, from + n)
-    .map((row, i) =>
-      l.trainer.add({
-        features: row,
-        label: flipped(from + i),
-        site: site(from + i),
-      }),
-    );
+  const steps = rows.slice(from, from + n).map((row, i) =>
+    l.trainer.add({
+      features: row,
+      label: flipped(from + i),
+      site: site(from + i),
+    }),
+  );
   await Promise.all(steps);
 }
 
@@ -177,7 +175,9 @@ test("without siteClip, trains on every site's rows together, unclipped", async 
     l.trainer.endRound();
     return l.updates[0];
   };
-  expect(maxDiff(await update(undefined), await update(1e9))).toBeLessThan(1e-5);
+  expect(maxDiff(await update(undefined), await update(1e9))).toBeLessThan(
+    1e-5,
+  );
 });
 
 test("sends a clipped update after roundSteps and starts over from global", async () => {

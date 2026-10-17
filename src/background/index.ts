@@ -10,6 +10,7 @@ import { count, gauge, now, initSink, since } from "@/lib/perf";
 import { writeMeta } from "@/lib/perf/outbox";
 import { featuresWasmBytes } from "@/lib/features";
 import {
+  blockable,
   disabledSites,
   removeAllRules,
   ruleKey,
@@ -111,6 +112,7 @@ async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
         : await topLevelUrl(details.tabId);
     if (details.type !== "main_frame") since("sw.topLevelUrl", start);
     if (!top) return;
+
     // the allow rules (src/lib/block) override any rule we'd add, so no refetch, verdict or rule: they cover the
     // disabled site's pages and what the site starts in iframes on other sites, but not its navigations
     if (!flags.processDisabledSites) {
@@ -211,7 +213,10 @@ async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
 
       // New, too old or changed -> change
       const block = await classify(bodyBytes);
-      if (block) {
+
+      // blocked request -> rule -> we never see it again (never completes again);
+      // requests that can't be blocked would come around again
+      if (block && blockable(observation.req)) {
         checked.drop(ruleKeyHash);
       } else if (!hasBody || bodyBytes) {
         // A body verdict made without its body is URL-only: don't cache it, or its validator would skip the next refetch

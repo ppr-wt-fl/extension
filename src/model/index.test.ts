@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 import {
+  backend,
+  dispose,
   io,
   layers,
   matMul,
@@ -13,6 +15,7 @@ import "@tensorflow/tfjs-backend-wasm";
 import { beforeAll, expect, test } from "vitest";
 import { presets } from "@/lib/features";
 import {
+  gradient,
   inspectModes,
   loadModel,
   predict,
@@ -149,4 +152,51 @@ test("transposeFreeMatMul matches the cpu backend for every transpose flag", asy
   actual.forEach((out, i) =>
     out.forEach((v, j) => expect(v).toBeCloseTo(expected[i][j], 5)),
   );
+});
+
+test("a saturated row with the wrong label still gets a gradient", async () => {
+  const model = await adflush();
+  const predictions = predict(model, rows);
+  const i = predictions.findIndex((p) => p === 1);
+  expect(i, "no saturated row").toBeGreaterThanOrEqual(0);
+
+  const { grads, loss } = gradient(model, [rows[i]], [0], false, true);
+  const norm = Math.sqrt(
+    grads.reduce(
+      (sum, g) => sum + tidy(() => g.square().sum().dataSync()[0]),
+      0,
+    ),
+  );
+  dispose(grads);
+  // logLoss on the probability stops at -ln(1e-7) ≈ 16.1, with zero gradient
+  expect(loss).toBeGreaterThan(16.2);
+  expect(norm).toBeGreaterThan(1);
+});
+
+test("gradient loss matches logLoss on unsaturated rows, without leaks", async () => {
+  const model = await adflush();
+  const predictions = predict(model, rows);
+  const picked = [...predictions.keys()]
+    .filter((i) => predictions[i] > 1e-3 && predictions[i] < 1 - 1e-3)
+    .slice(0, 32);
+  const labels = picked.map((i) => validation.labels[i]);
+  const expected = picked.reduce((sum, i, k) => {
+    const p = predictions[i];
+    if (labels[k] === 1) return sum - Math.log(p + 1e-7);
+    return sum - Math.log(1 - p + 1e-7);
+  }, 0);
+
+  const tensors = memory().numTensors;
+  const dataIds = backend().numDataIds();
+  const { grads, loss } = gradient(
+    model,
+    picked.map((i) => rows[i]),
+    labels,
+    false,
+    true,
+  );
+  dispose(grads);
+  expect(memory().numTensors).toBe(tensors);
+  expect(backend().numDataIds()).toBe(dataIds);
+  expect(loss / picked.length).toBeCloseTo(expected / picked.length, 4);
 });

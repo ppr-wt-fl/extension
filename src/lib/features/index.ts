@@ -1,4 +1,5 @@
 import init, {
+  __wbg_reset_state,
   extract as rustExtract,
   inline_scripts,
   inspect,
@@ -54,14 +55,27 @@ export function extract(
   ts = tsFeatures,
 ): Float64Array {
   const rustNames = names.filter((name) => !ts.has(name));
-  const rust = rustExtract(
-    rustNames,
-    req.url,
-    req.topLevelUrl,
-    req.type,
-    req.body,
-    req.acornAsts,
-  );
+  let rust: Float64Array;
+  try {
+    rust = rustExtract(
+      rustNames,
+      req.url,
+      req.topLevelUrl,
+      req.type,
+      req.body,
+      req.acornAsts,
+    );
+  } catch (e) {
+    // A trap (e.g. stack overflow on deeply nested JS) leaves the instance poisoned, so every later call would fail
+    if (e instanceof WebAssembly.RuntimeError || e instanceof RangeError) {
+      __wbg_reset_state();
+      // init returns the new instance once one exists; drop the old memory so it can be freed
+      void init().then((out) => {
+        memory = out.memory;
+      });
+    }
+    throw e;
+  }
   let next = 0;
   return Float64Array.from(
     names,

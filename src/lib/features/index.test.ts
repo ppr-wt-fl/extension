@@ -51,3 +51,14 @@ test("featuresWasmBytes is the linear memory, in 64 KiB pages", () => {
   expect(bytes).toBeGreaterThan(0);
   expect(bytes % 65536).toBe(0);
 });
+
+test("recovers after deeply nested JS overflows the wasm stack", () => {
+  const baseline = extract(presets.adflush, request);
+  for (const body of [
+    "(".repeat(1000) + "1" + ")".repeat(1000),
+    "[".repeat(2000),
+  ]) {
+    expect(() => extract(presets.adflush, { ...request, body })).toThrow();
+    expect(extract(presets.adflush, request)).toEqual(baseline);
+  }
+});

@@ -1,12 +1,14 @@
 import init, {
   __wbg_reset_state,
   extract as rustExtract,
+  initSync,
   inline_scripts,
   inspect,
   type InitInput,
   unknown_node_type,
 } from "../../../features/pkg/adflush_features.js";
 import adflush from "../../../features/presets/adflush.json";
+import { flags } from "../flags";
 
 /** The request a feature vector is computed for. */
 export interface RequestInfo {
@@ -49,6 +51,12 @@ export function featuresWasmBytes(): number | undefined {
   return memory?.buffer.byteLength;
 }
 
+function resetWasm(): void {
+  __wbg_reset_state();
+  // An instance exists, so initSync just returns the new one's exports; drops the old memory so it can be freed
+  memory = initSync(undefined as never).memory;
+}
+
 /** The named features of a request, in the given order. Throws on unknown names. */
 export function extract(
   names: readonly string[],
@@ -69,14 +77,16 @@ export function extract(
   } catch (e) {
     // A trap (e.g. stack overflow on deeply nested JS) leaves the instance poisoned, so every later call would fail
     if (e instanceof WebAssembly.RuntimeError || e instanceof RangeError) {
-      __wbg_reset_state();
-      // init returns the new instance once one exists; drop the old memory so it can be freed
-      void init().then((out) => {
-        memory = out.memory;
-      });
+      resetWasm();
     }
     throw e;
   }
+
+  // Otherwise wasm never gives it back
+  if ((featuresWasmBytes() ?? 0) > flags.resetWasmBytes) {
+    resetWasm();
+  }
+
   let next = 0;
   return Float64Array.from(
     names,

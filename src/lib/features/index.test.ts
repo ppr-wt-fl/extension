@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { flags } from "../flags";
 import {
   extract,
   featuresWasmBytes,
@@ -74,4 +75,11 @@ test("class fields zero the JS features and set unknownNodeType", () => {
   expect(Array.from(field)).toEqual([0, 0]);
   expect(unknownNodeType()).toBe(true);
   expect(unknownNodeType()).toBe(false); // read once
+});
+
+test("resets the wasm memory after an extract grows it past the flag", () => {
+  const baseline = extract(presets.adflush, request);
+  extract(presets.adflush, { ...request, body: "a;".repeat(1e6) });
+  expect(featuresWasmBytes()!).toBeLessThan(flags.resetWasmBytes);
+  expect(extract(presets.adflush, request)).toEqual(baseline);
 });

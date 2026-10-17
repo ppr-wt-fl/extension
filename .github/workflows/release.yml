@@ -23,4 +23,4 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/*.zip release/SHA256SUMS --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" release/*.zip release/SHA256SUMS --generate-notes --notes "Testers: download the zip below and follow [TESTERS.md](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/TESTERS.md)."

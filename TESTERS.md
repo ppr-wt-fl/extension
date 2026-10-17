@@ -8,15 +8,19 @@ Blocks ads and trackers in Chrome using ML.
 ## Install
 
 - Use Chrome 141 or newer (version from autumn 2025).
-- Download compressed extension TODO LINK
-- Unzip `crx-blocker-extension-1.0.0.zip`
+- Download `crx-blocker-extension-*.zip` from the [latest release](https://github.com/ppr-wt-fl/extension/releases/latest).
+- Unzip it.
 - Go to `chrome://extensions`.
 - Turn on **Developer mode** (top right).
 - Click **Load unpacked** and pick the unzipped folder (the one with `manifest.json` inside).
 - Click the puzzle piece icon next to the address bar and pin "blocker-extension".
+- Disable other ad blockers (please 🙏).
 
 > [!CAUTION]
 > Don't delete the unpacked zip
+
+> [!CAUTION]
+> I would really appreciate it if you disable other ad blockers
 
 ## Use it
 

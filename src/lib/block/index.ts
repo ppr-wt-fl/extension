@@ -143,6 +143,11 @@ export async function installedRules(): Promise<{ key: string; id: number }[]> {
 const ALLOW_RULE_ID = 2 ** 31 - 1;
 const ALLOW_WORKERS_RULE_ID = 2 ** 31 - 2;
 
+/** Whether a rule id is one of the allow rules, not a block rule. */
+export function isAllowRule(id: number): boolean {
+  return id === ALLOW_RULE_ID || id === ALLOW_WORKERS_RULE_ID;
+}
+
 /** Hostnames blocking is off on. Stored in the allow rule itself, so the rule can't get out of sync with a list. */
 export async function disabledSites(): Promise<string[]> {
   const [allow] = await chrome.declarativeNetRequest.getDynamicRules({

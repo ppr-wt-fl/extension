@@ -4,6 +4,7 @@ import {
   applyRule,
   blockable,
   installedRules,
+  isAllowRule,
   refererRule,
   rule,
   ruleKey,
@@ -265,4 +266,10 @@ test("installedRules removes the oldest block rules past MAX_RULES", async () =>
   );
   expect(await installedRules()).toHaveLength(MAX_RULES);
   expect(updateDynamicRules).toHaveBeenCalledWith({ removeRuleIds: [1, 2] });
+});
+
+test("isAllowRule tells the allow rules from block rules", () => {
+  expect(isAllowRule(2 ** 31 - 1)).toBe(true);
+  expect(isAllowRule(2 ** 31 - 2)).toBe(true);
+  expect(isAllowRule(1)).toBe(false);
 });

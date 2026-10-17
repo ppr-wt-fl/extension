@@ -126,23 +126,11 @@ const values = extract(presets.adflush, {
 
 ### Matching the Python pipeline exactly
 
-The AST features (`ng_*`, `avg_ident`) come from acorn-loose in Python. Without `acornAsts`, Rust parses the
-scripts with oxc, which differs where acorn-loose has to recover: line-wrapped minified code (about 1–12% off),
-JSON `<script>` blocks (far off) and broken code. For exact values, parse with acorn-loose 8.4.0 and pass the ASTs:
-
-```ts
-import { parse } from "acorn-loose";
-
-const scripts = type === "script" ? [body] : inlineScripts(body);
-const acornAsts = scripts.map((s) => {
-  try {
-    return JSON.stringify(parse(s, { ecmaVersion: 2022 }));
-  } catch {
-    return ""; // BigInt literals make JSON.stringify throw; the script then gets no features, like in Python
-  }
-});
-extract(presets.adflush, { url, topLevelUrl, type, body, acornAsts });
-```
+The AST features (`ng_*`, `avg_ident`) come from acorn-loose in Python. `extract` parses the scripts with the
+bundled acorn-loose 8.4.0 (acorn pinned to 8.11.3 in `overrides`, the versions of YOPO's `ast_parser.js`) unless
+`acornAsts` is given. Turning off `flags.acorn` (src/lib/flags.ts) leaves acorn-loose out of the bundle and parses
+with Rust's oxc instead, which differs where acorn-loose has to recover: line-wrapped minified code,
+JSON `<script>` blocks and broken code.
 
 ### Add a feature
 
@@ -156,8 +144,7 @@ All tests run with vitest against the wasm build, through `src/lib/features` lik
 (`vitest.config.ts`, tests in `src/**/*.test.ts` and `features/tests/*.test.ts`):
 
 ```sh
-bun run test                       # acorn path must match the Python reference exactly
-OXC=1 bun run test                 # also lists where the oxc path differs
+bun run test                       # features must match the Python reference exactly
 EXPECTED=other.json bun run test   # check another fixture
 ```
 

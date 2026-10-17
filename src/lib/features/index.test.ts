@@ -54,7 +54,8 @@ test("featuresWasmBytes is the linear memory, in 64 KiB pages", () => {
   expect(bytes % 65536).toBe(0);
 });
 
-test("recovers after deeply nested JS overflows the wasm stack", () => {
+// acorn-loose ASTs skip oxc, the parser that overflows
+test.skipIf(import.meta.env.ACORN)("recovers after deeply nested JS overflows the wasm stack", () => {
   const baseline = extract(presets.adflush, request);
   for (const body of [
     "(".repeat(1000) + "1" + ")".repeat(1000),

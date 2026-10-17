@@ -2,8 +2,8 @@ import { flags } from "@/lib/flags";
 import { count, gauge, now, since } from "@/lib/perf";
 
 // Requests already classified "allow", so a page load doesn't refetch, extract and classify them again. Blocked
-// requests never complete, so they never come back here, and a block verdict drops its entry: if its rule gets
-// evicted (MAX_RULES), the request is classified again. Kept in storage.session, which survives the service worker
+// requests never complete, so they never come back here, and a block verdict drops its entry: if it got no rule
+// (MAX_RULES), the request is classified again. Kept in storage.session, which survives the service worker
 // stopping and is cleared on browser restart and on extension update, which is when the model changes.
 
 /** Seconds since 2026-01-01, small enough for V8 to store unboxed (Smi, 2^30 s = 34 years). */

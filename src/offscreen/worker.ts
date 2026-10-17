@@ -260,7 +260,6 @@ self.onmessage = async ({
       rule = ruleChange(message.request, block);
       // its request already loaded
       if (rule?.action === "add") count("rules.added");
-      if (rule?.evict !== undefined) count("rules.evicted");
       if (rule?.action === "remove") count("rules.removed");
     } else if (block) {
       log.trace("block verdict, but not blockable", message.request);

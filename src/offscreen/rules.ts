@@ -1,14 +1,14 @@
 import { logger } from "@/lib/log";
+import { count } from "@/lib/perf";
 
 const log = logger("rules");
 
 // The worker's decisions: which requests to block, and the block rules that need. Apart from worker.ts for tests.
 
-/** A block rule the service worker adds or removes. `evict`: a rule to remove along with an add, to stay in the limit. */
+/** A block rule the service worker adds or removes. */
 export interface RuleChange {
   action: "add" | "remove";
   id: number;
-  evict?: number;
 }
 
 /**
@@ -18,7 +18,7 @@ export interface RuleChange {
 export const MAX_RULES = 30_000 - 2;
 
 /**
- * Id of the block rule of each request key that has one, oldest first. The decision only changes the rules when it
+ * Id of the block rule of each request key that has one. The decision only changes the rules when it
  * changes, as a request is classified again on every load.
  */
 export const rules = new Map<string, number>();
@@ -36,23 +36,24 @@ export function restoreRules(installed: { key: string; id: number }[]): void {
   }
 }
 
-/** The rule change a request's decision needs, if any. Past `MAX_RULES`, an add evicts the oldest rule. */
+/** The rule change a request's decision needs, if any. At `MAX_RULES`, no more rules are added. */
 export function ruleChange(
   key: string,
   block: boolean,
 ): RuleChange | undefined {
   const id = rules.get(key);
   if (block && id === undefined) {
-    let evict: number | undefined;
+    // FIXME: at the limit the request just isn't blocked. Far off in practice (watch rules.full); if it's hit,
+    // evict instead: the least recently blocking rule, reported by the service worker from
+    // webRequest.onErrorOccurred (ERR_BLOCKED_BY_CLIENT), else simply the oldest.
     if (rules.size >= MAX_RULES) {
-      const [oldest, oldestId] = rules.entries().next().value!;
-      rules.delete(oldest);
-      log.debug("rule limit reached, evicting", oldest);
-      evict = oldestId;
+      log.debug("rule limit reached, not blocking", key);
+      count("rules.full");
+      return;
     }
     const id = nextRuleId++;
     rules.set(key, id);
-    return { action: "add", id, evict };
+    return { action: "add", id };
   }
   if (!block && id !== undefined) {
     rules.delete(key);

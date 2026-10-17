@@ -3,6 +3,7 @@ import {
   extract,
   featuresWasmBytes,
   inlineScripts,
+  unknownNodeType,
   presets,
   type RequestInfo,
 } from ".";
@@ -61,4 +62,16 @@ test("recovers after deeply nested JS overflows the wasm stack", () => {
     expect(() => extract(presets.adflush, { ...request, body })).toThrow();
     expect(extract(presets.adflush, request)).toEqual(baseline);
   }
+});
+
+test("class fields zero the JS features and set unknownNodeType", () => {
+  const names = ["avg_charperline", "num_get_cookie"];
+  const body = "var c = document.cookie;\n";
+  const plain = extract(names, { ...request, body });
+  expect(unknownNodeType()).toBe(false);
+  const field = extract(names, { ...request, body: `class _{x=1}\n${body}` });
+  expect(Array.from(plain)).not.toEqual([0, 0]);
+  expect(Array.from(field)).toEqual([0, 0]);
+  expect(unknownNodeType()).toBe(true);
+  expect(unknownNodeType()).toBe(false); // read once
 });

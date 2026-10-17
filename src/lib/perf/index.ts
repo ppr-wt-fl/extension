@@ -96,6 +96,8 @@ export type Metric =
   | "startup.total"
   // sizes
   | "features.wasmBytes"
+  // script whose JS features were zeroed by an AST node type missing from the n-gram dictionary (e.g. class fields)
+  | "features.jsFeatExtractFailedUnknownNode"
   | "tf.numTensors"
   | "tf.numBytes"
   | "tf.wasmBytes"

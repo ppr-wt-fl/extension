@@ -6,6 +6,7 @@ use regex::Regex;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 // Python raises RecursionError (and the script gets no features) when the AST JSON nests deeper than this.
@@ -77,6 +78,13 @@ fn regexes() -> &'static Regexes {
         .unwrap(),
         script_tag: Regex::new(r"(?is)<!--.*?-->|<script\b[^>]*>(.*?)</\s*script\s*>").unwrap(),
     })
+}
+
+static UNKNOWN_NODE_TYPE: AtomicBool = AtomicBool::new(false);
+
+/// Whether a script's features were zeroed for an unknown AST node type since the last call.
+pub fn take_unknown_node_type() -> bool {
+    UNKNOWN_NODE_TYPE.swap(false, Ordering::Relaxed)
 }
 
 /// Features of a JavaScript file (content_policy_type "script").
@@ -163,7 +171,14 @@ fn script_features(source: &str, acorn_ast: Option<&str>) -> Option<Script> {
     let token_dict = ngram_token_dict();
     let mut tokens = Vec::new();
     for t in &types {
-        tokens.push(*token_dict.get(t.as_ref())?);
+        // A node type missing from the dict (e.g. PropertyDefinition of ES2022 class fields) drops ALL of the
+        // script's features, also the AST-independent ones. AdFlush's Python pipeline does the same (KeyError),
+        // so this must stay for parity, but it is a known evasion: `class _{x=1}` zeroes a script. Flagged for perf.
+        let Some(token) = token_dict.get(t.as_ref()) else {
+            UNKNOWN_NODE_TYPE.store(true, Ordering::Relaxed);
+            return None;
+        };
+        tokens.push(*token);
     }
     let mut ngram_counts: HashMap<(u32, u32, u32), f64> = HashMap::new();
     let mut ngram_len = 0;

@@ -109,6 +109,11 @@ pub fn inspect(
     serde_json::json!({ "fqdn": url::fqdn(url), "ngrams": js.ngrams }).to_string()
 }
 
+#[wasm_bindgen]
+pub fn unknown_node_type() -> bool {
+    js::take_unknown_node_type()
+}
+
 /// Non-empty inline scripts of an HTML document, with newlines normalized to "\n".
 #[wasm_bindgen]
 pub fn inline_scripts(html: &str) -> Vec<String> {

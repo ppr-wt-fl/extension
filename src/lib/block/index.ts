@@ -243,10 +243,6 @@ export function applyRule(
   observedAt: number,
 ): Promise<void> {
   pending.set(change.id, change.action === "add" ? rule(change.id, req) : null);
-  if (change.evict !== undefined) {
-    pending.set(change.evict, null);
-    queuedAt.delete(change.evict);
-  }
   if (change.action === "add")
     queuedAt.set(change.id, { queued: now(), observed: observedAt });
   else queuedAt.delete(change.id);

@@ -3,7 +3,7 @@ import { count, gauge, now, since } from "@/lib/perf";
 
 // Requests already classified "allow", or "block" without a rule (not `blockable`), so a page load doesn't refetch,
 // extract and classify them again. Blocked requests never complete, so they never come back here, and a blockable
-// block verdict drops its entry: if its rule gets evicted (MAX_RULES), the request is classified again. Kept in
+// block verdict drops its entry: if it got no rule (MAX_RULES), the request is classified again. Kept in
 // storage.session, which survives the service worker stopping and is cleared on browser restart and on extension
 // update, which is when the model changes.
 

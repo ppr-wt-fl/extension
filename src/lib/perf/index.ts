@@ -67,7 +67,7 @@ export type Metric =
   | "sw.timeToRule"
   | "rules"
   | "rules.added"
-  | "rules.evicted"
+  | "rules.full"
   | "rules.removed"
   | "block.hits"
   | "block.loadedDespiteRule"

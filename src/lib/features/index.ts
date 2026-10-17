@@ -3,6 +3,7 @@ import init, {
   inline_scripts,
   inspect,
   type InitInput,
+  unknown_node_type,
 } from "../../../features/pkg/adflush_features.js";
 import adflush from "../../../features/presets/adflush.json";
 
@@ -82,4 +83,8 @@ export function rustInspect(req: RequestInfo): Inspection {
   );
 }
 
-export { inline_scripts as inlineScripts };
+export {
+  inline_scripts as inlineScripts,
+  /** True once if the last `extract` zeroed a script's JS features for an unknown AST node type (a known evasion). */
+  unknown_node_type as unknownNodeType,
+};

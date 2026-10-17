@@ -3,6 +3,7 @@ import {
   extract,
   featuresWasmBytes,
   inlineScripts,
+  unknownNodeType,
   presets,
   type RequestInfo,
 } from ".";
@@ -50,4 +51,16 @@ test("featuresWasmBytes is the linear memory, in 64 KiB pages", () => {
   const bytes = featuresWasmBytes()!;
   expect(bytes).toBeGreaterThan(0);
   expect(bytes % 65536).toBe(0);
+});
+
+test("class fields zero the JS features and set unknownNodeType", () => {
+  const names = ["avg_charperline", "num_get_cookie"];
+  const body = "var c = document.cookie;\n";
+  const plain = extract(names, { ...request, body });
+  expect(unknownNodeType()).toBe(false);
+  const field = extract(names, { ...request, body: `class _{x=1}\n${body}` });
+  expect(Array.from(plain)).not.toEqual([0, 0]);
+  expect(Array.from(field)).toEqual([0, 0]);
+  expect(unknownNodeType()).toBe(true);
+  expect(unknownNodeType()).toBe(false); // read once
 });

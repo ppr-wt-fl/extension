@@ -17,6 +17,7 @@ import {
   extract as extractFeatures,
   initRust,
   type RequestInfo,
+  unknownNodeType,
 } from "../features";
 import { logger } from "@/lib/log";
 import { count, now, record, since } from "@/lib/perf";
@@ -151,6 +152,7 @@ export async function observe(obs: Observation): Promise<boolean> {
   start = now();
   const features = extractFeatures(FEATURES, obs.req);
   since(`sw.features.${obs.req.type}`, start);
+  if (unknownNodeType()) count("features.jsFeatExtractFailedUnknownNode");
   if (obs.req.body !== undefined)
     record(`sw.featuresBodyChars.${obs.req.type}`, obs.req.body.length);
 

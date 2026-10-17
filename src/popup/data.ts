@@ -1,4 +1,6 @@
+import { isAllowRule } from "@/lib/block";
 import { outboxStats } from "@/lib/perf/outbox";
+import { MAX_RULES } from "@/offscreen/rules";
 import { formatSize } from "./export";
 
 export async function activeTab(): Promise<chrome.tabs.Tab | undefined> {
@@ -12,17 +14,39 @@ export function hostOf(tab: chrome.tabs.Tab): string | undefined {
   return new URL(tab.url).hostname;
 }
 
-/** Blocked requests on the tab since its last page load, undefined when Chrome won't tell. */
+// getMatchedRules allows 20 calls per 10 minutes outside a user gesture, so opening the popup often runs out
+const COUNT_FRESH_MS = 30_000;
+
+/**
+ * Blocked requests on the tab since its last page load, undefined when Chrome won't tell. Reuses the count of the same
+ * tab and URL from the last `COUNT_FRESH_MS` unless `fresh`, and any older one when Chrome refuses.
+ */
 export async function loadBlocked(
   tab: chrome.tabs.Tab,
+  fresh = false,
 ): Promise<number | undefined> {
   if (tab.id === undefined) return undefined;
+  const key = `blocked:${tab.id}`;
+  const stored = (await chrome.storage.session.get(key))[key] as
+    { url?: string; at: number; count: number } | undefined;
+  let cached: typeof stored;
+  if (stored?.url === tab.url) cached = stored;
+  if (!fresh && cached && Date.now() - cached.at < COUNT_FRESH_MS)
+    return cached.count;
   // Chrome keeps the matches of the tab's current document, so navigation, bfcache and prerender are handled
   // rejects when rate limited or activeTab isn't granted (some chrome:// pages)
   const matched = await chrome.declarativeNetRequest
     .getMatchedRules({ tabId: tab.id })
     .catch(() => undefined);
-  return matched?.rulesMatchedInfo.length;
+  if (!matched) return cached?.count;
+  // the allow rules of paused sites match every request there, they block nothing
+  const count = matched.rulesMatchedInfo.filter(
+    (m) => !isAllowRule(m.rule.ruleId),
+  ).length;
+  await chrome.storage.session.set({
+    [key]: { url: tab.url, at: Date.now(), count },
+  });
+  return count;
 }
 
 /** Sample count and size of the outbox. */
@@ -33,11 +57,12 @@ export async function loadOutbox() {
   return { records: stats.records, size };
 }
 
-/** Installed block rules and Chrome's cap on them. */
+/** Installed block rules and the cap on them, without the allow rules of paused sites. */
 export async function loadRules() {
+  const rules = await chrome.declarativeNetRequest.getDynamicRules();
   return {
-    installed: (await chrome.declarativeNetRequest.getDynamicRules()).length,
-    cap: chrome.declarativeNetRequest.MAX_NUMBER_OF_DYNAMIC_RULES,
+    installed: rules.filter((r) => !isAllowRule(r.id)).length,
+    cap: MAX_RULES,
   };
 }
 

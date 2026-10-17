@@ -64,7 +64,11 @@ export function LogsPanel({
         )}
         <ConfirmButton
           className="secondary"
-          onConfirm={() => clearOutbox().then(onChange)}
+          onConfirm={() =>
+            clearOutbox()
+              .then(() => setExported(undefined))
+              .then(onChange)
+          }
         >
           Clear all
         </ConfirmButton>

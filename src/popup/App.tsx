@@ -18,7 +18,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (tab) loadBlocked(tab).then(setBlocked);
+    // a refresh is what the user asked for, the first load can take a recent count
+    if (tab) loadBlocked(tab, tick > 0).then(setBlocked);
   }, [tab, tick]);
 
   let host: string | undefined;

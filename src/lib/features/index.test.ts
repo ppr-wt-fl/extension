@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { flags } from "../flags";
 import {
   extract,
   featuresWasmBytes,
@@ -50,4 +51,22 @@ test("featuresWasmBytes is the linear memory, in 64 KiB pages", () => {
   const bytes = featuresWasmBytes()!;
   expect(bytes).toBeGreaterThan(0);
   expect(bytes % 65536).toBe(0);
+});
+
+test("recovers after deeply nested JS overflows the wasm stack", () => {
+  const baseline = extract(presets.adflush, request);
+  for (const body of [
+    "(".repeat(1000) + "1" + ")".repeat(1000),
+    "[".repeat(2000),
+  ]) {
+    expect(() => extract(presets.adflush, { ...request, body })).toThrow();
+    expect(extract(presets.adflush, request)).toEqual(baseline);
+  }
+});
+
+test("resets the wasm memory after an extract grows it past the flag", () => {
+  const baseline = extract(presets.adflush, request);
+  extract(presets.adflush, { ...request, body: "a;".repeat(1e6) });
+  expect(featuresWasmBytes()!).toBeLessThan(flags.resetWasmBytes);
+  expect(extract(presets.adflush, request)).toEqual(baseline);
 });

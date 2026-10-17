@@ -75,6 +75,8 @@ export const flags = {
   processDisabledSites: false,
   /** Compares every verdict with EasyList + EasyPrivacy's (src/lib/lists) as lists.* perf counts. Needs perf. */
   lists: true,
+  /** Wasm linear memory only grows, so a feature extract that grew it past this many bytes resets the instance. */
+  resetWasmBytes: 256 * 1024 * 1024,
   /** Perf metrics (src/lib/perf), raw in IndexedDB, exported from the popup. */
   perf: {
     /** Adds unlimitedStorage + declarativeNetRequestFeedback (rule hits) permissions. */

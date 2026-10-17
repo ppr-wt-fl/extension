@@ -14,11 +14,11 @@ COPY filterlists filterlists
 
 # build:features
 RUN cargo build --release --target wasm32-unknown-unknown --manifest-path features/Cargo.toml
-RUN wasm-bindgen --target web --out-dir features/pkg features/target/wasm32-unknown-unknown/release/adflush_features.wasm
+RUN wasm-bindgen --target web --experimental-reset-state-function --out-dir features/pkg features/target/wasm32-unknown-unknown/release/adflush_features.wasm
 
 # build:filterlists
-RUN cargo build --release --lib --target wasm32-unknown-unknown --manifest-path filterlists/Cargo.toml 
-RUN wasm-bindgen --target web --out-dir filterlists/pkg filterlists/target/wasm32-unknown-unknown/release/filterlists.wasm 
+RUN cargo build --release --lib --target wasm32-unknown-unknown --manifest-path filterlists/Cargo.toml
+RUN wasm-bindgen --target web --out-dir filterlists/pkg filterlists/target/wasm32-unknown-unknown/release/filterlists.wasm
 RUN cargo run --release --manifest-path filterlists/Cargo.toml --bin compile -- filterlists/pkg filterlists/data/*.txt
 
 # Build extension
@@ -29,10 +29,10 @@ COPY . .
 COPY --from=wasm /src/features/pkg features/pkg
 COPY --from=wasm /src/filterlists/pkg filterlists/pkg
 # test and build without their build:features/build:filterlists steps
-RUN bun install --frozen-lockfile 
+RUN bun install --frozen-lockfile
 
-RUN bunx vitest run 
-RUN bunx tsc -b 
+RUN bunx vitest run
+RUN bunx tsc -b
 
 RUN bunx vite build
 

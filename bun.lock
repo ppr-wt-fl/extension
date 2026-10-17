@@ -8,6 +8,7 @@
         "@picocss/pico": "^2.1.1",
         "@tensorflow/tfjs": "^4.22.0",
         "@tensorflow/tfjs-backend-wasm": "^4.22.0",
+        "acorn-loose": "8.4.0",
         "react": "^19.2.4",
         "react-dom": "^19.2.4",
       },
@@ -26,6 +27,9 @@
         "vitest": "^5.0.3",
       },
     },
+  },
+  "overrides": {
+    "acorn": "8.11.3",
   },
   "packages": {
     "@crxjs/vite-plugin": ["@crxjs/vite-plugin@2.7.1", "", { "dependencies": { "@webcomponents/custom-elements": "^1.5.0", "acorn-walk": "^8.3.5", "convert-source-map": "^2.0.0", "debug": "^4.4.3", "es-module-lexer": "^0.10.0", "fs-extra": "^11.3.5", "jsesc": "^3.0.2", "magic-string": "^0.30.12", "node-html-parser": "^7.1.0", "pathe": "^2.0.1", "picocolors": "^1.1.1", "rollup": "2.80.0", "rxjs": "7.5.7", "tinyglobby": "^0.2.17" }, "peerDependencies": { "vite": "^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0" } }, "sha512-mn77Lc1ilIvbO7ZqijjNy+AnRgc8srkfHOtV6HrGrYZgRe8YI3aIcSjHJCU5Kq75SejEZGrdAoHdn3gBGeKpEA=="],
@@ -168,7 +172,9 @@
 
     "@webgpu/types": ["@webgpu/types@0.1.38", "", {}, "sha512-7LrhVKz2PRh+DD7+S+PVaFd5HxaWQvoMqBbsV9fNJO1pjUs1P8bM2vQVNfk+3URTqbuTI7gkXi0rfsN0IadoBA=="],
 
-    "acorn": ["acorn@8.19.0", "", { "bin": { "acorn": "bin/acorn" } }, "sha512-oJlA3XiRm7Cyk6qFD2Jn8ak9B7jSy0qy00ADO3+8dpT0LSjFihQYv4C02LFCSYJV3Q37xYwwRy5m+IpIiUzqWw=="],
+    "acorn": ["acorn@8.11.3", "", { "bin": { "acorn": "bin/acorn" } }, "sha512-Y9rRfJG5jcKOE0CLisYbojUjIrIEE7AGMzA/Sm4BslANhbS+cDMpgBdcPT91oJ7OuJ9hYJBx59RjbhxVnrF8Xg=="],
+
+    "acorn-loose": ["acorn-loose@8.4.0", "", { "dependencies": { "acorn": "^8.11.0" } }, "sha512-M0EUka6rb+QC4l9Z3T0nJEzNOO7JcoJlYMrBlyBCiFSXRyxjLKayd4TbQs2FDRWQU1h9FR7QVNHt+PEaoNL5rQ=="],
 
     "acorn-walk": ["acorn-walk@8.3.5", "", { "dependencies": { "acorn": "^8.11.0" } }, "sha512-HEHNfbars9v4pgpW6SO1KSPkfoS0xVOM/9UzkJltjlsHZmJasxg8aXkuZa7SMf8vKGIBhpUsPluQSqhJFCqebw=="],
 

@@ -20,6 +20,7 @@
     "@picocss/pico": "^2.1.1",
     "@tensorflow/tfjs": "^4.22.0",
     "@tensorflow/tfjs-backend-wasm": "^4.22.0",
+    "acorn-loose": "8.4.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
@@ -36,5 +37,8 @@
     "vite": "^8.0.0",
     "vite-plugin-zip-pack": "^1.2.4",
     "vitest": "^5.0.3"
+  },
+  "overrides": {
+    "acorn": "8.11.3"
   }
 }

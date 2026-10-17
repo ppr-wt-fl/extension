@@ -73,6 +73,11 @@ export const flags = {
   },
   /** Refetching, classifying and adding rules on sites disabled in the popup, though their allow rules override them. */
   processDisabledSites: false,
+  /**
+   * Parses scripts with acorn-loose 8.4.0 in JS (src/lib/features), like the Python pipeline the model was trained
+   * on. Off: Rust's oxc parses them, leaving acorn-loose out of the bundle but differing on code acorn-loose recovers.
+   */
+  acorn: true,
   /** Compares every verdict with EasyList + EasyPrivacy's (src/lib/lists) as lists.* perf counts. Needs perf. */
   lists: true,
   /** Perf metrics (src/lib/perf), raw in IndexedDB, exported from the popup. */

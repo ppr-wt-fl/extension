@@ -9,6 +9,7 @@ import {
   rustInspect,
   type RequestInfo,
 } from "../../src/lib/features";
+import { flags } from "../../src/lib/flags";
 
 interface Case {
   name?: string;
@@ -108,8 +109,8 @@ test("acorn AST matches Python", () => {
   expect(failures, failures.join("\n")).toEqual([]);
 });
 
-// oxc can't reproduce acorn-loose's error recovery; run with OXC=1 bun run test to list the differences
-test.skipIf(!process.env.OXC)("oxc AST matches Python", () => {
+// production passes no ASTs: extract parses them with the bundled acorn-loose, or oxc without flags.acorn
+test.skipIf(!flags.acorn)("bundled acorn-loose matches Python", () => {
   const failures = compare(false);
   expect(failures, failures.join("\n")).toEqual([]);
 });

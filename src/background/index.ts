@@ -75,6 +75,9 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
     chrome.tabs.create({
       url: chrome.runtime.getURL("src/onboarding/index.html"),
     });
+  // Dynamic rules outlive an update, but blocked requests never come back to be reclassified by the new model
+  if (reason === "update" && flags.learn.resetRulesOnNewGlobal)
+    resetRules().catch(log.error);
 });
 
 // The sites the user turned the extension off on, read on every service worker start and again when the popup
@@ -238,15 +241,17 @@ async function onCompleted(details: chrome.webRequest.OnCompletedDetails) {
   }
 }
 
-// The popup's reset: no block rules, no cached verdicts. The worker then restores from the installed rules, else it
-// keeps the removed ones and never adds them again.
+// No block rules, no cached verdicts. The worker then restores from the installed rules, else it keeps the removed
+// ones and never adds them again. Run by the popup's reset and by an extension update.
+async function resetRules() {
+  await Promise.all([removeAllRules(), checked.clear()]);
+  await restoreAgain();
+  log.info("reset rules and verdict cache");
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.resetRules !== true) return;
-  (async () => {
-    await Promise.all([removeAllRules(), checked.clear()]);
-    await restoreAgain();
-    log.info("reset rules and verdict cache");
-  })()
+  resetRules()
     .catch(log.error)
     .finally(() => sendResponse());
 

@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 const observe = vi.fn(async () => true);
+const restoreAgain = vi.fn(async () => {});
 vi.mock("@/lib/collect", () => ({
   BODY_TYPES: new Set(["script", "sub_frame", "main_frame"]),
   observe,
-  restoreAgain: async () => {},
+  restoreAgain,
   topLevelUrl: async () => "https://news.example/",
 }));
 vi.mock("@/lib/perf", () => ({
@@ -24,29 +25,39 @@ type Listener = (
   d: Partial<chrome.webRequest.OnCompletedDetails>,
 ) => Promise<void>;
 let onCompleted: Listener;
+let onInstalled: (d: { reason: string }) => void;
+const updateDynamicRules = vi.fn(async () => {});
+const removeSession = vi.fn(async () => {});
 beforeEach(() => {
+  vi.clearAllMocks();
   const listener = { addListener: () => {} };
   const store: Record<string, unknown> = {};
   vi.stubGlobal("chrome", {
     runtime: {
       getURL: (p: string) => `chrome-extension://ours/${p}`,
       onStartup: listener,
-      onInstalled: listener,
+      onInstalled: {
+        addListener: (f: typeof onInstalled) => (onInstalled = f),
+      },
       onMessage: listener,
     },
+    tabs: { create: vi.fn() },
     storage: {
       session: {
         get: async (k: string) => ({ [k]: store[k] }),
         set: async (items: Record<string, unknown>) =>
           void Object.assign(store, items),
+        remove: removeSession,
       },
     },
-    declarativeNetRequest: { getDynamicRules: async () => [] },
+    declarativeNetRequest: {
+      getDynamicRules: async () => [{ id: 5 }, { id: 6 }],
+      updateDynamicRules,
+    },
     webRequest: {
       onCompleted: { addListener: (l: Listener) => (onCompleted = l) },
     },
   });
-  observe.mockClear();
   vi.resetModules();
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -74,4 +85,15 @@ test("a block verdict that can't get a rule is classified once, a blockable one 
   await onCompleted(ad);
   await onCompleted(ad);
   expect(observe).toHaveBeenCalledTimes(3);
+});
+
+test("an extension update removes the block rules and the verdict cache, an install does not", async () => {
+  await import("./index");
+  onInstalled({ reason: "install" });
+  expect(updateDynamicRules).not.toHaveBeenCalled();
+
+  onInstalled({ reason: "update" });
+  await vi.waitFor(() => expect(restoreAgain).toHaveBeenCalled());
+  expect(updateDynamicRules).toHaveBeenCalledWith({ removeRuleIds: [5, 6] });
+  expect(removeSession).toHaveBeenCalledWith("checked");
 });

@@ -1,4 +1,4 @@
-# Usage: docker build --output release .   -> release/crx-blocker-extension-<version>.zip
+# Usage: docker build --output release .   -> release/blocker-extension-<version>.zip
 # The commands mirror the scripts in package.json, split by toolchain: keep both in sync.
 
 # Build rust wasm

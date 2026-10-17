@@ -20,7 +20,7 @@ export default defineConfig({
     crx({ manifest }),
     zip({
       outDir: "release",
-      outFileName: `crx-${pkg.name}-${pkg.version}.zip`,
+      outFileName: `${pkg.name}-${pkg.version}.zip`,
     }),
   ],
   build: {

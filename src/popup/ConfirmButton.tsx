@@ -5,17 +5,19 @@ export function ConfirmButton({
   className,
   onConfirm,
   children,
+  confirmLabel = "Confirm?",
 }: {
   className?: string;
   onConfirm: () => void;
   children: ReactNode;
+  confirmLabel?: string;
 }) {
   const [armed, setArmed] = useState(false);
 
   let label = children;
   let style = className;
   if (armed) {
-    label = "Confirm?";
+    label = confirmLabel;
     style = "contrast";
   }
 

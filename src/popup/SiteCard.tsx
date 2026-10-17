@@ -26,13 +26,13 @@ function ReportButton({
   if (reported) {
     return (
       <button className="secondary outline" disabled>
-        Reported, thank you
+        Reported {label}, thank you
       </button>
     );
   }
 
-  let shown = label;
-  if (reportedBefore) shown = "Already reported. Report again";
+  let confirmLabel;
+  if (reportedBefore) confirmLabel = "Already reported. Report again?";
 
   return (
     <ConfirmButton
@@ -42,8 +42,9 @@ function ReportButton({
         chrome.storage.session.set({ [reportKey]: true });
         setReported(true);
       }}
+      confirmLabel={confirmLabel}
     >
-      {shown}
+      Report {label}
     </ConfirmButton>
   );
 }
@@ -99,12 +100,12 @@ export function SiteCard({
       <ReportButton
         host={host}
         metric="block.breakageReported"
-        label="Report broken site"
+        label="broken site"
       />
       <ReportButton
         host={host}
         metric="block.adSeenReported"
-        label="Report seeing an ad/tracker"
+        label="seeing an ad/tracker"
       />
     </article>
   );

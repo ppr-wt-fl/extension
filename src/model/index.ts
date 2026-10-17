@@ -4,6 +4,7 @@ import {
   io,
   loadLayersModel,
   losses,
+  model as functionalModel,
   randomNormal,
   Reduction,
   registerKernel,
@@ -15,6 +16,7 @@ import {
   type KernelFunc,
   type LayersModel,
   type Scalar,
+  type SymbolicTensor,
   type Tensor,
   type Tensor2D,
   type TensorInfo,
@@ -99,6 +101,28 @@ export function inspectModes(model: LayersModel): {
   return { modeDependent, stateful: model.nonTrainableWeights.length > 0 };
 }
 
+const logitViews = new WeakMap<LayersModel, LayersModel | undefined>();
+
+/**
+ * The model up to its final sigmoid Activation, sharing weights, or undefined if it ends otherwise. A loss on logits
+ * keeps a gradient where float32 sigmoid rounds to exactly 0 or 1.
+ */
+function logitView(model: LayersModel): LayersModel | undefined {
+  if (logitViews.has(model)) return logitViews.get(model);
+  const head = model.outputs[0].sourceLayer;
+  let view: LayersModel | undefined;
+  if (
+    head.getClassName() === "Activation" &&
+    head.getConfig().activation === "sigmoid"
+  )
+    view = functionalModel({
+      inputs: model.inputs,
+      outputs: head.input as SymbolicTensor,
+    });
+  logitViews.set(model, view);
+  return view;
+}
+
 /** Gradient of the summed binary cross-entropy of the rows, one tensor per trainable weight. `loss` only with `readLoss`. */
 export function gradient(
   model: LayersModel,
@@ -110,17 +134,27 @@ export function gradient(
   const trainableVariables = model.trainableWeights.map(
     (w) => w.read() as Variable,
   );
+  const logits = logitView(model);
   let loss = NaN;
 
   const grads = tidy(() => {
     const { value, grads } = variableGrads(() => {
       const batch = makeBatchTensor(rows, inputSize(model));
-      const output = model.apply(batch, {
-        training,
-      }) as Tensor;
+      const y = tensor2d([...labels], [labels.length, 1]);
 
+      if (logits) {
+        const output = logits.apply(batch, { training }) as Tensor;
+        return losses.sigmoidCrossEntropy(
+          y,
+          output,
+          undefined,
+          0,
+          Reduction.SUM,
+        ) as Scalar;
+      }
+      const output = model.apply(batch, { training }) as Tensor;
       return losses.logLoss(
-        tensor2d([...labels], [labels.length, 1]),
+        y,
         output,
         undefined,
         1e-7,

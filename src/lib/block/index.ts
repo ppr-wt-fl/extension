@@ -80,6 +80,11 @@ export function refererRule(id: number, url: string, referer: string): Rule {
   };
 }
 
+// shortcut: exact-URL rules never match again for URLs with cache busters (?cb=, correlator=), so those ads load once
+// per page load and their rules only fill MAX_RULES. Matching without the query would block every call to endpoints
+// whose meaning is in the query (/graphql?op=, load.php?modules=), and merge their verdicts and cache entries
+// (src/background/checked.ts). Upgrade when block.hits vs rules.added shows it matters: wildcard known
+// cache-buster params' values with * in urlFilter and ruleKey.
 export function rule(id: number, req: RequestInfo): Rule {
   return {
     id,

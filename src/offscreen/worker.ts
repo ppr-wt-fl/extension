@@ -12,7 +12,7 @@ import tfSimdUrl from "@tensorflow/tfjs-backend-wasm/dist/tfjs-backend-wasm-simd
 import type { Source } from "@/lib/collect";
 import { flags } from "@/lib/flags";
 import type { RequestInfo } from "@/lib/features";
-import { Classifier, Trainer } from "@/lib/learn";
+import { Classifier, logUpdate, Trainer } from "@/lib/learn";
 import { listsWasmBytes, loadLists } from "@/lib/lists";
 import { inputSize, loadModel, THRESHOLD, transposeFreeMatMul } from "@/model";
 import { logger } from "@/lib/log";
@@ -151,8 +151,17 @@ const learnerPromise = (async () => {
 
   start = now();
   // every training slice first classifies the waiting requests
-  const trainer = new Trainer(global, local, flags.learn, () =>
-    classifier.flush(),
+  const trainer = new Trainer(
+    global,
+    local,
+    flags.learn,
+    () => classifier.flush(),
+    (update) => {
+      logUpdate(update);
+      // the document relays it to the service worker, as the worker has no chrome.runtime
+      if (flags.learn.resetRulesEachRound)
+        self.postMessage({ resetRules: true });
+    },
   );
   const classifier = new Classifier(global, local, trainer);
   learner = { classifier, trainer };

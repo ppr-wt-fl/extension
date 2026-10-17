@@ -38,7 +38,7 @@ interface Pending {
 export type SendUpdate = (update: Float32Array) => void;
 
 /** Stub until there is an FL server. */
-const logUpdate: SendUpdate = (update) => {
+export const logUpdate: SendUpdate = (update) => {
   let squared = 0;
   for (const value of update) squared += value * value;
   log.info(

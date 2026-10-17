@@ -31,8 +31,17 @@ let next = 0;
 
 worker.onmessage = ({
   data,
-}: MessageEvent<{ id: number; reply: LearnerReply } | { failed: string }>) => {
-  if ("failed" in data) {
+}: MessageEvent<
+  | { id: number; reply: LearnerReply }
+  | { failed: string }
+  | { resetRules: true }
+>) => {
+  if ("resetRules" in data) {
+    // the popup's reset message, handled by the service worker (src/background)
+    chrome.runtime
+      .sendMessage({ resetRules: true })
+      .catch((error) => console.error("rule reset failed", error));
+  } else if ("failed" in data) {
     settleWorkersPendingRepliesWithErrors(
       `worker failed to start: ${data.failed}`,
     );

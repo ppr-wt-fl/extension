@@ -12,6 +12,7 @@ import { featuresWasmBytes } from "@/lib/features";
 import {
   blockable,
   disabledSites,
+  isAllowRule,
   removeAllRules,
   ruleKey,
   siteDisabled,
@@ -252,12 +253,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-// Rule hits, unpacked only. All rules block, so a hit is a blocked request; tab requests only, like
-// sw.requestsCompleted (blocked ones never complete).
+// Rule hits, unpacked only. Block rules block, so a hit is a blocked request; the allow rules of disabled sites also
+// match, those aren't hits. Tab requests only, like sw.requestsCompleted (blocked ones never complete).
 if (flags.perf.enabled) {
   chrome.declarativeNetRequest.onRuleMatchedDebug?.addListener(
-    ({ request }) => {
+    ({ request, rule }) => {
       // NOTE: should we really make sure it comes from a user tab? blocking other stuff is valid usage I would guess
+      if (isAllowRule(rule.ruleId)) return;
       if (request.tabId >= 0) count("block.hits");
     },
   );

@@ -248,3 +248,6 @@ the requests; the rest is mostly Firefox's `beacon` type, which Chrome calls `pi
   `Math.random` by default) and seed tfjs Dropout. Keep it unseeded in the extension, where a known seed lets a page
   predict which of its samples are replayed.
 - What do we do if we exceed max rules??
+- False-positive blocks never expire: a blocked request never completes, so it's never reclassified
+  (`src/background/index.ts`). One wrong verdict on a first-party script breaks the site until the tester pauses it or
+  resets rules. Skip same-site requests in `blockable()`, or give rules a TTL.

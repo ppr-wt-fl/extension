@@ -29,25 +29,31 @@ Blocks ads and trackers in Chrome using ML.
 ## If a **site breaks**
 
 - Open the popup on that site.
-- Click **report breakage**.
-- Click **turn off** to stop blocking on that site, then OK to reload the page.
-- Many sites broken? Click **reset rules**.
+- Click **Report broken site**, then click again to confirm.
+- Flip the switch next to the site name to pause blocking there, then click **Reload page to apply**.
+- Many sites broken? Click **Reset rules**, then click again to confirm.
+
+## If you **see an ad or tracker**
+
+- Open the popup on that site.
+- Click **Report seeing an ad/tracker**, then click again to confirm.
 
 ## Send logs
 
 - Open the popup
-- Click **export**
+- Click **Export**
 - Send the `perf-*.ndjson.gz` files from your downloads (a big export is split into several).
+- Once the download is done, you can click **Clear exported** (before closing the popup) to free space.
 
 > [!WARNING]
 > Closing the popup cancels the download
 
 > [!WARNING]
-> Never click **clear all** unless asked.
+> Never click **Clear all** unless asked.
 
 ## Privacy
 
-- Logged: timings, counts, memory use, how the model compares to filter lists, how often you click **turn off**, **turn on** and **report breakage**.
+- Logged: timings, counts, memory use, how the model compares to filter lists, how often you pause or resume a site and click **Report broken site** or **Report seeing an ad/tracker**.
 - Also logged: your browser and its version, operating system and its version, CPU type and core count, roughly how much RAM, the device model if the browser reports it, and the extension and model version.
 - Every entry has a timestamp and a random ID made on install (also in the file name), so your files can be grouped. It isn't linked to your name or account.
 - Not logged: URLs, site names, page content, cookies, anything you type.

@@ -163,6 +163,8 @@ export class Trainer {
   private roundRows = 0;
   /** Fresh rows this round, for the later epochs */
   private roundSamples: Sample[] = [];
+  /** No training until then, `now()` */
+  private pausedUntil = 0;
   readonly modes: { modeDependent: boolean; stateful: boolean };
 
   /** `global` and `local` are two copies of the same model, `local` is trained. */
@@ -195,6 +197,7 @@ export class Trainer {
 
   /** Buffers the sample if admitted. Resolves once the steps it started, and those before, are done. */
   add(sample: Sample): Promise<void> {
+    if (now() < this.pausedUntil) return this.running;
     if (this.admit(sample)) this.buffer.push(sample);
 
     if (this.buffer.length >= this.config.miniBatchSize) {
@@ -223,6 +226,8 @@ export class Trainer {
   }
 
   private async step(fresh: Sample[]): Promise<void> {
+    // queued before the round ended
+    if (now() < this.pausedUntil) return;
     const stepStart = now();
     const fraction = this.config.replayFraction;
     const replayed = this.replay.sample(
@@ -393,7 +398,8 @@ export class Trainer {
       `round over: ${this.steps} steps, ${this.roundRows} rows, ${((now() - this.roundStart) / 1000).toFixed(1)}s`,
     );
     this.sendUpdate(data);
-    this.roundStart = now();
+    // fl.roundMs starts after the pause
+    this.roundStart = this.pausedUntil = now() + this.config.roundIntervalMs;
     this.roundRows = 0;
     this.local.setWeights(this.global.getWeights());
     this.steps = 0;

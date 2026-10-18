@@ -43,6 +43,7 @@ async function learner(
     idleMs: 1000,
     roundSteps: 1000,
     replayFraction: 0,
+    roundIntervalMs: 0,
     ...overrides,
   };
   const global = await loadModel(json, weights);
@@ -283,6 +284,22 @@ test("records the training metrics only with measureFl", async () => {
         ]),
       );
   }
+});
+
+test("drops samples for roundIntervalMs after a round", async () => {
+  const l = await learner({ roundSteps: 1, roundIntervalMs: 60_000 });
+  // 2 steps queued at once: the second runs after the round ended
+  l.config.miniBatchSize = 2;
+  await Promise.all(
+    rows
+      .slice(0, 4)
+      .map((row, i) =>
+        l.trainer.add({ features: row, label: flipped(i), site: "a" }),
+      ),
+  );
+  await trainOn(l, 2, () => "b", 4);
+  expect(l.updates).toHaveLength(1);
+  expect(l.trainer.sizes()).toMatchObject({ buffer: 0, steps: 0 });
 });
 
 test("reservoir keeps at most its capacity and samples distinct items", () => {

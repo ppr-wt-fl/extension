@@ -148,7 +148,10 @@ export async function exportOutbox(
     .stream()
     .pipeThrough(new CompressionStream("gzip"));
   return {
-    blob: await new Response(gzip).blob(),
+    // untyped, Chrome guesses text/plain and saves as .ndjson.txt
+    blob: await new Response(gzip, {
+      headers: { "Content-Type": "application/gzip" },
+    }).blob(),
     lastKey,
     full: bytes >= MAX_FILE_BYTES,
   };

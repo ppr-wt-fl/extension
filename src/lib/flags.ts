@@ -9,7 +9,7 @@ export const flags = {
      * - "local": the model being trained
      * - "global": the round's starting weights
      */
-    inferWith: "local" as "local" | "global",
+    inferWith: "global" as "local" | "global",
     /**
      * Mode of the training passes, for layers that act differently in training (Dropout, BatchNorm), see
      * `inspectModes`. Only changes the gradients, not the cost: verdicts always come from a separate inference pass.

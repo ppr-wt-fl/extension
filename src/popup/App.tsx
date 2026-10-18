@@ -33,7 +33,9 @@ export default function App() {
     <main>
       <header>
         <h1>Blocker</h1>
-        <small>ML ad &amp; tracker blocking</small>
+        <small>
+          ML ad &amp; tracker blocking · v{chrome.runtime.getManifest().version}
+        </small>
       </header>
 
       <section className="count">

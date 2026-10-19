@@ -31,7 +31,7 @@ export const flags = {
     /** Mean-gradient SGD (summed loss / rows), and site clipping already bounds each step: a plain small step size. */
     learningRate: 0.01,
     /** Share of each step's rows that are replayed from earlier steps, against drifting to one site. */
-    replayFraction: 0.15,
+    replayFraction: 0.5,
     /** Samples kept for replay, by reservoir sampling over every trained sample. */
     replayCapacity: 5000,
     /** Training samples per top-level site and round, so one page can't fill a round with its requests. */
@@ -49,7 +49,7 @@ export const flags = {
     roundIntervalMs: 3_600_000,
     /**
      * Passes over the round's fresh rows before its update is sent (FedAvg's local epochs). The first is the steps
-     * as rows arrive, the others reshuffle the round's rows into mini-batches at its end. Each costs another round
+     * as rows arrive, the others reshuffle the round's rows into mini-batches, plus replayed rows, at its end. Each costs another round
      * of compute, and fits the local model closer to this user's browsing.
      */
     epochs: 1,

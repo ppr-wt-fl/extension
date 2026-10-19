@@ -144,8 +144,8 @@ export class Classifier {
 /**
  * Buffers labeled samples and takes one SGD step on every `miniBatchSize` of them (plus replayed ones), in slices of
  * `sliceRows` rows with `beforeSlice` (classifying the waiting requests) before each.
- * Every `roundSteps` steps it trains `epochs - 1` more times on the round's rows, sends the clipped local - global
- * update and starts over from global.
+ * Every `roundSteps` steps it trains `epochs - 1` more times on the round's rows (plus replayed ones), sends the
+ * clipped local - global update and starts over from global.
  * Everything is in memory (src/offscreen/worker.ts): lost when the browser or the extension restarts, so are the
  * buffered rows short of a step.
  */
@@ -229,11 +229,7 @@ export class Trainer {
     // queued before the round ended
     if (now() < this.pausedUntil) return;
     const stepStart = now();
-    const fraction = this.config.replayFraction;
-    const replayed = this.replay.sample(
-      Math.round((fresh.length * fraction) / (1 - fraction)),
-    );
-    const rows = [...fresh, ...replayed];
+    const rows = this.withReplay(fresh);
     const loss = await this.descend(rows);
     for (const row of fresh) {
       this.replay.add(row);
@@ -242,21 +238,30 @@ export class Trainer {
 
     this.steps++;
     log.debug(
-      `step ${this.steps}/${this.config.roundSteps}: ${fresh.length} + ${replayed.length} replayed rows, loss ${(loss / rows.length).toFixed(4)}`,
+      `step ${this.steps}/${this.config.roundSteps}: ${fresh.length} + ${rows.length - fresh.length} replayed rows, loss ${(loss / rows.length).toFixed(4)}`,
     );
     since("learner.batch", stepStart);
     if (this.steps < this.config.roundSteps) return;
 
-    // no replay: shuffling already mixes the round's sites into each mini-batch
+    // the reservoir and roundSamples already hold these rows, so only the first epoch adds them
     for (let epoch = 1; epoch < this.config.epochs; epoch++) {
       for (const batch of chunks(
         shuffle(this.roundSamples),
         this.config.miniBatchSize,
       )) {
-        await this.descend(batch);
+        await this.descend(this.withReplay(batch));
       }
     }
     this.endRound();
+  }
+
+  /** The rows plus samples from the reservoir, `replayFraction` of the result. */
+  private withReplay(fresh: Sample[]): Sample[] {
+    const fraction = this.config.replayFraction;
+    const replayed = this.replay.sample(
+      Math.round((fresh.length * fraction) / (1 - fraction)),
+    );
+    return [...fresh, ...replayed];
   }
 
   /** One SGD step on the rows, clipped per site. Returns the summed loss, with `measureFl`. */

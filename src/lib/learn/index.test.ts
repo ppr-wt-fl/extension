@@ -209,6 +209,21 @@ test("epochs train on the round's rows again before sending", async () => {
   expect(norm(await update(2)) / norm(await update(1))).toBeCloseTo(2, 1);
 });
 
+test("every epoch replays, but only the first adds to the reservoir", async () => {
+  const l = await learner({ epochs: 2, roundSteps: 2, replayFraction: 0.5 });
+  await new Promise((r) => setTimeout(r));
+  samples.length = 0;
+  await trainOn(l, 4);
+  await trainOn(l, 4, () => "b", 4);
+  await new Promise((r) => setTimeout(r));
+  const trainRows = samples
+    .filter(([name]) => name === "learner.trainRows")
+    .map(([, value]) => value);
+  // epoch 1: the first step has nothing to replay. Epoch 2: 2 mini-batches of 4 + 4 replayed
+  expect(trainRows).toEqual([4, 8, 8, 8]);
+  expect(l.trainer.sizes().replay).toBe(8);
+});
+
 test("trains on a row once per round, and at most perSiteLimit per site", async () => {
   const l = await learner({ perSiteLimit: 1, miniBatchSize: 1 });
   // only the first is admitted: the second is the same row from another site, the others hit the site's limit

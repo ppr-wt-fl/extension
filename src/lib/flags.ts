@@ -90,7 +90,7 @@ export const flags = {
    * on. Off: Rust's oxc parses them, leaving acorn-loose out of the bundle but differing on code acorn-loose recovers.
    */
   acorn: true,
-  /** Compares every verdict with EasyList + EasyPrivacy's (src/lib/lists) as lists.* perf counts. Needs perf. */
+  /** Compares every verdict with EasyList + EasyPrivacy's (src/lib/lists) as filter-lists.* perf counts. Needs perf. The lists label training either way. */
   lists: true,
   /** Wasm linear memory only grows, so a feature extract that grew it past this many bytes resets the instance. */
   resetWasmBytes: 256 * 1024 * 1024,

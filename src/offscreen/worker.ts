@@ -13,6 +13,7 @@ import type { Source } from "@/lib/collect";
 import { flags } from "@/lib/flags";
 import type { RequestInfo } from "@/lib/features";
 import { Classifier, logUpdate, Trainer } from "@/lib/learn";
+import { label as fallbackLabel } from "@/lib/label";
 import { listsWasmBytes, loadLists } from "@/lib/lists";
 import { inputSize, loadModel, THRESHOLD, transposeFreeMatMul } from "@/model";
 import { logger } from "@/lib/log";
@@ -42,13 +43,11 @@ export interface LearnerRequest {
   /** Whether the request can get a block rule, `blockable` in src/lib/block */
   blockable: boolean;
   source: Source;
-  /** For the filter lists' verdict (src/lib/lists) */
+  /** For the filter lists' verdict (src/lib/lists), which is also the training label */
   req: Omit<RequestInfo, "body" | "acornAsts">;
   features: number[];
   /** Top-level site of the request */
   site: string;
-  /** Training label, undefined to only classify */
-  label?: 0 | 1;
   /** SW send time, `now()` */
   sentAt?: number;
 }
@@ -102,14 +101,11 @@ if (flags.perf.enabled) {
   }, flags.perf.flushMs);
 }
 
-// failing lists only lose the comparison, not the verdicts
-const checkLists =
-  flags.lists && flags.perf.enabled
-    ? loadLists().catch((error) => {
-        log.error("filter lists failed to load", error);
-        count("worker.listsFailed");
-      })
-    : undefined;
+// the lists label the training samples (src/lib/label when they fail); failing lists only lose the comparison, not the verdicts
+const checkLists = loadLists().catch((error) => {
+  log.error("filter lists failed to load", error);
+  count("worker.listsFailed");
+});
 
 const learnerPromise = (async () => {
   const startupStart = now();
@@ -128,8 +124,7 @@ const learnerPromise = (async () => {
   transposeFreeMatMul();
   // HEAPU8 is replaced when the memory grows, so read through the module each time
   tfWasm = (findBackend("wasm") as BackendWasm | null)?.wasm as
-    | { HEAPU8: Uint8Array }
-    | undefined;
+    { HEAPU8: Uint8Array } | undefined;
   since("startup.backend", start);
 
   start = now();
@@ -224,9 +219,27 @@ self.onmessage = async ({
 
     const features = Float64Array.from(message.features);
     const verdict = classifier.submit(features);
-    if (message.label !== undefined) {
-      void trainer.add({ features, site: message.site, label: message.label });
+    const check = await checkLists;
+    let blockedBy: string[] | undefined;
+    if (check) {
+      const start = now();
+      try {
+        blockedBy = check(message.req);
+      } catch (error) {
+        log.error("filter lists failed to match", error);
+        count("worker.listsMatchFailed");
+      }
+      since("filter-lists.match", start);
     }
+    let label: 0 | 1 | undefined;
+    if (blockedBy) {
+      label = 0;
+      if (blockedBy.length > 0) label = 1;
+    } else {
+      label = await fallbackLabel(message.req);
+    }
+    if (label !== undefined)
+      void trainer.add({ features, site: message.site, label });
     const probability = await verdict;
 
     const block = probability >= THRESHOLD;
@@ -238,11 +251,7 @@ self.onmessage = async ({
     );
     count(block ? "decision.block" : "decision.allow");
 
-    const check = await checkLists;
-    if (check) {
-      const start = now();
-      const blockedBy = check(message.req);
-      since("filter-lists.match", start);
+    if (blockedBy && flags.lists && flags.perf.enabled) {
       const modelResponse = block ? "block" : "allow";
       const filterListResponse = blockedBy.length > 0 ? "block" : "allow";
 

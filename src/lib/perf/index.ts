@@ -87,6 +87,7 @@ export type Metric =
   | "worker.handle"
   | "worker.gaugesFailed"
   | "worker.listsFailed"
+  | "worker.listsMatchFailed"
   | `decision.${Verdict}`
   // startup
   | "startup.backend"

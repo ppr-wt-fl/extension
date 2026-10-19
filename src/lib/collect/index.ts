@@ -5,7 +5,6 @@ import {
   isOwnUrl,
   ruleKey,
 } from "@/lib/block";
-import { label } from "@/lib/label";
 import type {
   LearnerReply,
   LearnerRequest,
@@ -168,7 +167,6 @@ export async function observe(obs: Observation): Promise<boolean> {
     },
     features: [...features],
     site: new URL(obs.req.topLevelUrl).hostname,
-    label: await label(obs.req),
     sentAt: now(),
   };
 

@@ -52,7 +52,7 @@ export const flags = {
      * as rows arrive, the others reshuffle the round's rows into mini-batches, plus replayed rows, at its end. Each costs another round
      * of compute, and fits the local model closer to this user's browsing.
      */
-    epochs: 1,
+    epochs: 2,
     /**
      * Removes every block rule and cached verdict when a round ends and the local model starts over from global, so
      * requests the old model blocked are classified again. Like the popup's reset.

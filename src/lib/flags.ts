@@ -40,7 +40,7 @@ export const flags = {
      * L2 norm each site's summed gradient in a step is clipped to, so one page can only move a step so far.
      * undefined: no clipping, and a step's rows run together instead of in a pass per site.
      */
-    siteClip: 1 as number | undefined,
+    siteClip: undefined as number | undefined,
     /** L2 norm the round's update (local - global) is clipped to before it is sent. */
     updateClip: 10,
     /** SGD steps per round: ~1300 fresh rows, at most 100 per site (perSiteLimit), so a round spans >= 13 sites. */

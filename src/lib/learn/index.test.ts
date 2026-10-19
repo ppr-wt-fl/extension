@@ -277,7 +277,7 @@ test("records the training metrics only with measureFl", async () => {
   await names();
 
   for (const measureFl of [false, true]) {
-    const l = await learner({ roundSteps: 2 }, measureFl);
+    const l = await learner({ roundSteps: 2, siteClip: 1 }, measureFl);
     await trainOn(l, 4);
     await classify(l);
     await trainOn(l, 4, () => "b", 4);
